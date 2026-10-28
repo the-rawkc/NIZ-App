@@ -313,10 +313,20 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     this.messageQueue.set(envelope.envelopeId, { ...envelope });
   }
 
-  async getPendingMessages(recipientDeviceId: string): Promise<MessageEnvelope[]> {
-    return Array.from(this.messageQueue.values()).filter(
+  async enqueueBatchMessages(envelopes: MessageEnvelope[]): Promise<void> {
+    for (const env of envelopes) {
+      this.messageQueue.set(env.envelopeId, { ...env });
+    }
+  }
+
+  async getPendingMessages(recipientDeviceId: string, limit?: number): Promise<MessageEnvelope[]> {
+    const list = Array.from(this.messageQueue.values()).filter(
       (env) => env.recipientDeviceId === recipientDeviceId
     );
+    if (typeof limit === 'number' && limit > 0) {
+      return list.slice(0, limit);
+    }
+    return list;
   }
 
   async acknowledgeMessages(envelopeIds: string[]): Promise<number> {

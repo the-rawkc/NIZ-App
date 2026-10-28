@@ -82,17 +82,92 @@ export const messageRoutes = (
       });
     });
 
+    // Ingest batch of ciphertext messages (High-throughput batch endpoint)
+    fastify.post<{ Body: { envelopes: unknown[] } }>('/v1/messages/batch', async (request, reply) => {
+      try {
+        assertNoSecretsInPayload(request.body);
+      } catch (err: unknown) {
+        return reply.status(400).send({
+          error: 'BAD_REQUEST',
+          message: err instanceof Error ? err.message : 'Forbidden field',
+        });
+      }
+
+      const { envelopes } = request.body || {};
+      if (!Array.isArray(envelopes) || envelopes.length === 0 || envelopes.length > 500) {
+        return reply.status(400).send({
+          error: 'INVALID_BATCH',
+          message: 'Envelopes must be a non-empty array with at most 500 items',
+        });
+      }
+
+      const validatedEnvelopes = [];
+      const connectionCache = new Map<string, boolean>();
+
+      for (const item of envelopes) {
+        const parseResult = MessageEnvelopeSchema.safeParse(item);
+        if (!parseResult.success) {
+          return reply.status(400).send({
+            error: 'VALIDATION_ERROR',
+            details: parseResult.error.format(),
+          });
+        }
+
+        const env = parseResult.data;
+        const cacheKey = `${env.senderPublicId}::${env.recipientPublicId}`;
+        let isApproved = connectionCache.get(cacheKey);
+        if (isApproved === undefined) {
+          isApproved = await storage.areConnected(env.senderPublicId, env.recipientPublicId);
+          connectionCache.set(cacheKey, isApproved);
+        }
+
+        if (!isApproved) {
+          return reply.status(403).send({
+            error: 'FORBIDDEN',
+            message: `Recipient approval required before messaging recipient ${env.recipientPublicId}`,
+          });
+        }
+
+        validatedEnvelopes.push(env);
+      }
+
+      await storage.enqueueBatchMessages(validatedEnvelopes);
+
+      // WebSocket push for connected devices
+      if (activeSockets) {
+        for (const env of validatedEnvelopes) {
+          const recipientSocket = activeSockets.get(env.recipientDeviceId);
+          if (recipientSocket && recipientSocket.readyState === 1) {
+            recipientSocket.send(JSON.stringify({ type: 'ciphertext_envelope', envelope: env }));
+          }
+        }
+      }
+
+      logger.info('Enqueued batch of ciphertext envelopes', { count: validatedEnvelopes.length });
+
+      return reply.status(202).send({
+        success: true,
+        count: validatedEnvelopes.length,
+        envelopeIds: validatedEnvelopes.map((e) => e.envelopeId),
+      });
+    });
+
     // Fetch queued ciphertext envelopes for a recipient device
-    fastify.get<{ Params: { deviceId: string } }>('/v1/messages/queue/:deviceId', async (request, reply) => {
+    fastify.get<{
+      Params: { deviceId: string };
+      Querystring: { limit?: string };
+    }>('/v1/messages/queue/:deviceId', async (request, reply) => {
       const { deviceId } = request.params;
       const device = await storage.getDevice(deviceId);
       if (!device || device.revokedAt) {
         return reply.status(403).send({ error: 'DEVICE_NOT_FOUND_OR_REVOKED' });
       }
 
-      const messages = await storage.getPendingMessages(deviceId);
+      const limit = request.query.limit ? parseInt(request.query.limit, 10) : undefined;
+      const messages = await storage.getPendingMessages(deviceId, limit);
       return reply.send({
         deviceId,
+        count: messages.length,
         envelopes: messages,
       });
     });

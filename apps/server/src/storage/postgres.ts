@@ -638,18 +638,55 @@ export class PostgresStorageAdapter implements IStorageAdapter {
     );
   }
 
-  async getPendingMessages(recipientDeviceId: string): Promise<MessageEnvelope[]> {
-    const res = await this.pool.query(
-      `SELECT envelope_id AS "envelopeId", sender_public_id AS "senderPublicId",
+  async enqueueBatchMessages(envelopes: MessageEnvelope[]): Promise<void> {
+    if (envelopes.length === 0) return;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const envelope of envelopes) {
+        await client.query(
+          `INSERT INTO message_queue (envelope_id, sender_public_id, sender_device_id, recipient_public_id, recipient_device_id, ratchet_dh_key, ratchet_pn, ratchet_n, ciphertext, nonce, protocol_version, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            envelope.envelopeId,
+            envelope.senderPublicId,
+            envelope.senderDeviceId,
+            envelope.recipientPublicId,
+            envelope.recipientDeviceId,
+            envelope.ratchetHeader.dhPublicKey,
+            envelope.ratchetHeader.pn,
+            envelope.ratchetHeader.n,
+            envelope.ciphertext,
+            envelope.nonce,
+            envelope.protocolVersion,
+            envelope.createdAt,
+          ]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getPendingMessages(recipientDeviceId: string, limit?: number): Promise<MessageEnvelope[]> {
+    let query = `SELECT envelope_id AS "envelopeId", sender_public_id AS "senderPublicId",
               sender_device_id AS "senderDeviceId", recipient_public_id AS "recipientPublicId",
               recipient_device_id AS "recipientDeviceId", ratchet_dh_key AS "dhPublicKey",
               ratchet_pn AS "pn", ratchet_n AS "n", ciphertext, nonce,
               protocol_version AS "protocolVersion", created_at AS "createdAt"
        FROM message_queue
        WHERE recipient_device_id = $1
-       ORDER BY created_at ASC`,
-      [recipientDeviceId]
-    );
+       ORDER BY created_at ASC`;
+    const params: unknown[] = [recipientDeviceId];
+    if (typeof limit === 'number' && limit > 0) {
+      query += ` LIMIT $2`;
+      params.push(limit);
+    }
+    const res = await this.pool.query(query, params);
 
     return res.rows.map((row) => ({
       envelopeId: row.envelopeId,

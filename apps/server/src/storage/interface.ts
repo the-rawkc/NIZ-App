@@ -73,7 +73,8 @@ export interface IStorageAdapter {
 
   // Ciphertext Message Queue
   enqueueMessage(envelope: MessageEnvelope): Promise<void>;
-  getPendingMessages(recipientDeviceId: string): Promise<MessageEnvelope[]>;
+  enqueueBatchMessages(envelopes: MessageEnvelope[]): Promise<void>;
+  getPendingMessages(recipientDeviceId: string, limit?: number): Promise<MessageEnvelope[]>;
   acknowledgeMessages(envelopeIds: string[]): Promise<number>;
   countQueuedMessages(): Promise<number>;
 }

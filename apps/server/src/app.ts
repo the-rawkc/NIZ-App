@@ -69,9 +69,28 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     activeSockets.set(deviceId, socket);
     logger.info('Device connected via WebSocket', { deviceId });
 
+    // Bidirectional Heartbeat / Ping-Pong handling
+    socket.on('message', (data: Buffer | string) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'ping') {
+          if (socket.readyState === 1) { // OPEN
+            socket.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+          }
+        }
+      } catch {
+        // Ignore unparseable raw frames
+      }
+    });
+
     socket.on('close', () => {
       activeSockets.delete(deviceId);
       logger.info('Device disconnected from WebSocket', { deviceId });
+    });
+
+    socket.on('error', (err) => {
+      activeSockets.delete(deviceId);
+      logger.warn('WebSocket client error', { deviceId, error: err.message });
     });
   });
 

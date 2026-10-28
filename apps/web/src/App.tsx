@@ -888,93 +888,157 @@ export const App: React.FC = () => {
     }
   };
 
-  // Setup WebSocket connection for incoming ciphertext envelopes
+  // Process incoming ciphertext envelope (decrypt, render, and ACK purge)
+  const processEnvelope = async (envelope: MessageEnvelope) => {
+    const senderId = envelope.senderPublicId;
+
+    // Attempt decryption if session exists
+    let session = ratchetSessionsRef.current.get(senderId);
+    if (!session && activeChatContact?.counterpartIdentityKey) {
+      const masterSecret = new Uint8Array(32).fill(42);
+      session = await initAliceSession(masterSecret, activeChatContact.counterpartIdentityKey);
+      ratchetSessionsRef.current.set(senderId, session);
+    }
+
+    let decryptedText = '[Encrypted Payload]';
+    if (session) {
+      try {
+        decryptedText = await ratchetDecrypt(session, {
+          header: envelope.ratchetHeader,
+          ciphertext: envelope.ciphertext,
+          nonce: envelope.nonce,
+        });
+      } catch {
+        decryptedText = '[Decryption failed: signature/MAC invalid]';
+      }
+    }
+
+    let attachmentObj: ChatAttachment | undefined;
+    let displayText = decryptedText;
+    if (decryptedText.startsWith('{"type":"attachment"')) {
+      try {
+        const parsedAtt = JSON.parse(decryptedText);
+        attachmentObj = {
+          attachmentId: parsedAtt.attachmentId,
+          downloadUrl: parsedAtt.downloadUrl,
+          metadata: parsedAtt.metadata,
+        };
+        displayText = parsedAtt.metadata.filename;
+      } catch {
+        // fallback to raw text
+      }
+    }
+
+    // Append to message thread avoiding duplicates
+    setChatMessages((prev) => {
+      if (prev.some((m) => m.id === envelope.envelopeId)) return prev;
+      return [
+        ...prev,
+        {
+          id: envelope.envelopeId,
+          sender: 'them',
+          text: displayText,
+          attachment: attachmentObj,
+          timestamp: new Date(envelope.createdAt).toLocaleTimeString(),
+          verifiedE2EE: true,
+        },
+      ];
+    });
+
+    // Immediately acknowledge and purge from server queue
+    try {
+      await fetch(`${API_BASE}/v1/messages/ack`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ envelopeIds: [envelope.envelopeId] }),
+      });
+    } catch {
+      // ignore
+    }
+  };
+
+  // Synchronize pending offline messages from server queue
+  const syncPendingMessages = async () => {
+    if (!identity) return;
+    try {
+      const res = await fetch(`${API_BASE}/v1/messages/queue/${identity.deviceId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.envelopes)) {
+          for (const env of data.envelopes) {
+            await processEnvelope(env);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Setup WebSocket connection with auto-reconnection and heartbeat
   useEffect(() => {
     if (!identity) return;
 
-    const wsUrl = `${WS_BASE}/v1/ws?deviceId=${identity.deviceId}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    let isMounted = true;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    let backoffMs = 1000;
 
-    ws.onopen = () => {
-      setIsWsConnected(true);
-    };
+    const connect = () => {
+      if (!isMounted) return;
+      const wsUrl = `${WS_BASE}/v1/ws?deviceId=${identity.deviceId}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-    ws.onclose = () => {
-      setIsWsConnected(false);
-    };
+      ws.onopen = () => {
+        if (!isMounted) return;
+        setIsWsConnected(true);
+        backoffMs = 1000;
 
-    ws.onmessage = async (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'ciphertext_envelope' && data.envelope) {
-          const envelope: MessageEnvelope = data.envelope;
-          const senderId = envelope.senderPublicId;
-
-          // Attempt decryption if session exists
-          let session = ratchetSessionsRef.current.get(senderId);
-          if (!session && activeChatContact?.counterpartIdentityKey) {
-            const masterSecret = new Uint8Array(32).fill(42);
-            session = await initAliceSession(masterSecret, activeChatContact.counterpartIdentityKey);
-            ratchetSessionsRef.current.set(senderId, session);
+        // Periodic ping heartbeat
+        heartbeatInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
           }
+        }, 25000);
 
-          let decryptedText = '[Encrypted Payload]';
-          if (session) {
-            try {
-              decryptedText = await ratchetDecrypt(session, {
-                header: envelope.ratchetHeader,
-                ciphertext: envelope.ciphertext,
-                nonce: envelope.nonce,
-              });
-            } catch {
-              decryptedText = '[Decryption failed: signature/MAC invalid]';
-            }
+        // Sync pending messages on connect / reconnect
+        syncPendingMessages();
+      };
+
+      ws.onclose = () => {
+        if (!isMounted) return;
+        setIsWsConnected(false);
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        reconnectTimeout = setTimeout(() => {
+          backoffMs = Math.min(backoffMs * 2, 10000);
+          connect();
+        }, backoffMs);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'ciphertext_envelope' && data.envelope) {
+            await processEnvelope(data.envelope);
           }
-
-          let attachmentObj: ChatAttachment | undefined;
-          let displayText = decryptedText;
-          if (decryptedText.startsWith('{"type":"attachment"')) {
-            try {
-              const parsedAtt = JSON.parse(decryptedText);
-              attachmentObj = {
-                attachmentId: parsedAtt.attachmentId,
-                downloadUrl: parsedAtt.downloadUrl,
-                metadata: parsedAtt.metadata,
-              };
-              displayText = parsedAtt.metadata.filename;
-            } catch {
-              // fallback to raw text
-            }
-          }
-
-          // Append to message thread
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              id: envelope.envelopeId,
-              sender: 'them',
-              text: displayText,
-              attachment: attachmentObj,
-              timestamp: new Date(envelope.createdAt).toLocaleTimeString(),
-              verifiedE2EE: true,
-            },
-          ]);
-
-          // Immediately acknowledge and purge from server queue
-          await fetch(`${API_BASE}/v1/messages/ack`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ envelopeIds: [envelope.envelopeId] }),
-          });
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
-      }
+      };
     };
+
+    connect();
 
     return () => {
-      ws.close();
+      isMounted = false;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      if (wsRef.current) wsRef.current.close();
     };
   }, [identity, activeChatContact]);
 
