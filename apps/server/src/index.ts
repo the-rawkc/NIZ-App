@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import { buildApp } from './app.js';
-import { MemoryStorageAdapter } from './storage/memory.js';
+import { createStorageAdapter } from './storage/index.js';
 import { logger } from './utils/logger.js';
 
 dotenv.config();
@@ -8,8 +8,8 @@ dotenv.config();
 const port = Number.parseInt(process.env.PORT || '4000', 10);
 const host = process.env.HOST || '0.0.0.0';
 
-// Storage adapter (Memory adapter default for dev/tests, easily swappable with Postgres)
-const storage = new MemoryStorageAdapter();
+// Storage adapter (Swappable via STORAGE_ADAPTER=postgres|memory)
+const storage = createStorageAdapter();
 
 async function main() {
   const app = await buildApp({ storage });
