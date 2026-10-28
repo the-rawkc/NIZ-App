@@ -1,9 +1,13 @@
 import type { FastifyPluginAsync } from 'fastify';
+import type { WebSocket } from 'ws';
 import { MessageEnvelopeSchema, assertNoSecretsInPayload } from '@niz/validation';
 import type { IStorageAdapter } from '../storage/interface.js';
 import { logger } from '../utils/logger.js';
 
-export const messageRoutes = (storage: IStorageAdapter): FastifyPluginAsync => {
+export const messageRoutes = (
+  storage: IStorageAdapter,
+  activeSockets?: Map<string, WebSocket>
+): FastifyPluginAsync => {
   return async (fastify) => {
     // Send / Enqueue Ciphertext Message
     fastify.post('/v1/messages', async (request, reply) => {
@@ -52,6 +56,18 @@ export const messageRoutes = (storage: IStorageAdapter): FastifyPluginAsync => {
       }
 
       await storage.enqueueMessage(envelope);
+
+      // Real-time WebSocket delivery if recipient device is currently connected
+      if (activeSockets) {
+        const recipientSocket = activeSockets.get(envelope.recipientDeviceId);
+        if (recipientSocket && recipientSocket.readyState === 1) { // OPEN
+          recipientSocket.send(JSON.stringify({ type: 'ciphertext_envelope', envelope }));
+          logger.info('Pushed ciphertext envelope via WebSocket', {
+            envelopeId: envelope.envelopeId,
+            recipientDeviceId: envelope.recipientDeviceId,
+          });
+        }
+      }
 
       logger.info('Enqueued ciphertext envelope', {
         envelopeId: envelope.envelopeId,

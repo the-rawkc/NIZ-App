@@ -2,6 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { WebSocket } from 'ws';
 import { buildApp } from '../app.js';
 import { MemoryStorageAdapter } from '../storage/memory.js';
 
@@ -529,5 +530,107 @@ describe('NIZ Chat Server & Security Invariants', () => {
       },
     });
     assert.equal(postRemovalMsgRes.statusCode, 403);
+  });
+
+  it('Phase 4: Real-time WebSocket delivery of ciphertext envelopes', async () => {
+    // Start listening on dynamic port for WebSocket tests
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as { port: number }).port;
+
+    const aliceId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const bobId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const aliceDevId = crypto.randomUUID();
+    const bobDevId = crypto.randomUUID();
+
+    // Register Alice & Bob
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: aliceId,
+        device: {
+          deviceId: aliceDevId,
+          publicIdentityKey: Buffer.from('mock-alice-identity-key-32-bytes').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-alice-prekey-32-bytes-long').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: bobId,
+        device: {
+          deviceId: bobDevId,
+          publicIdentityKey: Buffer.from('mock-bob-identity-key-32-bytes--').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-bob-prekey-32-bytes-long---').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // Establish approved connection
+    const reqRes = await app.inject({
+      method: 'POST',
+      url: '/v1/connection-requests',
+      headers: { 'x-sender-public-id': aliceId },
+      payload: { recipientPublicId: bobId },
+    });
+    const { requestId } = JSON.parse(reqRes.body);
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/connection-requests/decision',
+      headers: { 'x-recipient-public-id': bobId },
+      payload: { requestId, decision: 'approve' },
+    });
+
+    // Bob connects to WebSocket
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/v1/ws?deviceId=${bobDevId}`);
+    await new Promise((resolve, reject) => {
+      ws.on('open', resolve);
+      ws.on('error', reject);
+    });
+
+    // Set up message reception listener
+    const receivedPromise = new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('message', (data) => {
+        resolve(JSON.parse(data.toString()));
+      });
+    });
+
+    // Alice sends a ciphertext envelope
+    const envelopeId = crypto.randomUUID();
+    const sendRes = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        envelopeId,
+        senderPublicId: aliceId,
+        senderDeviceId: aliceDevId,
+        recipientPublicId: bobId,
+        recipientDeviceId: bobDevId,
+        ratchetHeader: {
+          dhPublicKey: Buffer.from('alice-ratchet-dh-pubkey-32-bytes').toString('base64'),
+          pn: 0,
+          n: 0,
+        },
+        ciphertext: Buffer.from('realtime-encrypted-ciphertext-envelope').toString('base64'),
+        nonce: Buffer.from('24-byte-nonce-for-xchacha').toString('base64'),
+        protocolVersion: 'niz-dr-v1',
+        createdAt: new Date().toISOString(),
+      },
+    });
+    assert.equal(sendRes.statusCode, 202);
+
+    // Bob's WebSocket must immediately receive the envelope
+    const wsMessage = await receivedPromise;
+    assert.equal(wsMessage.type, 'ciphertext_envelope');
+    const receivedEnvelope = (wsMessage as { envelope: { envelopeId: string } }).envelope;
+    assert.equal(receivedEnvelope.envelopeId, envelopeId);
+
+    ws.close();
   });
 });

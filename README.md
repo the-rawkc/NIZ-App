@@ -98,5 +98,5 @@ Loads PostgreSQL 16 with schema initialized at `apps/server/src/db/init.sql`.
 - [x] **Phase 1: Foundation & Monorepo** — Workspaces, shared types, validation schemas, design tokens, modular server, web & admin scaffolds, automated security tests, CI pipeline.
 - [x] **Phase 2: Identity & QR Lifecycle** — Client-side cryptographic key generation (Ed25519 & X25519 prekeys via Libsodium), permanent identity QR, expiring/revocable/single-use temporary invitations, pre-connection preview & consent UI.
 - [x] **Phase 3: Connection Requests & Verification** — Request/approval state machine (`pending`, `approved`, `declined`, `blocked`), contact listing, pairwise safety number verification, blocking/unblocking, contact removal, and content-free abuse reporting.
-- [ ] **Phase 4: Encrypted One-to-One Text MVP** — Double Ratchet session establishment and ciphertext store-and-forward.
+- [x] **Phase 4: Encrypted One-to-One Text MVP** — Double Ratchet Algorithm (X25519 DH ratchet + symmetric BLAKE2b/XChaCha20-Poly1305 ratchets), out-of-order message key skipping, replay protection, real-time WebSocket ciphertext push, and offline store-and-forward queue with ACK purges.
 - [ ] **Phase 5: Hardening MVP** — Abuse quotas, rate limits, structured non-content audit logging.

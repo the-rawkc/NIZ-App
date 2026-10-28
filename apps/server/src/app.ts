@@ -1,6 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
+import websocket from '@fastify/websocket';
+import type { WebSocket } from 'ws';
 import type { IStorageAdapter } from './storage/interface.js';
 import { healthRoutes } from './routes/health.js';
 import { identityRoutes } from './routes/identity.js';
@@ -19,6 +21,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     logger: false, // Using our structured content-free logger
   });
 
+  const activeSockets = new Map<string, WebSocket>();
+
   // CORS configuration
   await app.register(cors, {
     origin: (_origin, cb) => {
@@ -29,10 +33,33 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     credentials: true,
   });
 
+  // WebSocket support
+  await app.register(websocket);
+
   // Rate Limiting
   await app.register(rateLimit, {
     max: opts.rateLimitMax ?? 100,
     timeWindow: '1 minute',
+  });
+
+  // WebSocket route for real-time ciphertext delivery
+  app.get('/v1/ws', { websocket: true }, (connection, req) => {
+    const rawConn = connection as unknown as { socket?: WebSocket };
+    const socket = rawConn.socket || (connection as unknown as WebSocket);
+
+    const deviceId = (req.query as { deviceId?: string })?.deviceId;
+    if (!deviceId) {
+      socket.close();
+      return;
+    }
+
+    activeSockets.set(deviceId, socket);
+    logger.info('Device connected via WebSocket', { deviceId });
+
+    socket.on('close', () => {
+      activeSockets.delete(deviceId);
+      logger.info('Device disconnected from WebSocket', { deviceId });
+    });
   });
 
   // Request logging hook (content-free)
@@ -62,7 +89,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(identityRoutes(opts.storage));
   await app.register(invitationRoutes(opts.storage));
   await app.register(connectionRoutes(opts.storage));
-  await app.register(messageRoutes(opts.storage));
+  await app.register(messageRoutes(opts.storage, activeSockets));
 
   return app;
 }

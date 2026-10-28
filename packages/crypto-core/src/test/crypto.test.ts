@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import _sodium from 'libsodium-wrappers-sumo';
 import {
   createClientIdentity,
   verifyPrekeySignature,
@@ -8,6 +9,10 @@ import {
   generatePermanentIdentityQrPayload,
   generateEphemeralInvitationQrPayload,
   parseNizQrPayload,
+  initAliceSession,
+  initBobSession,
+  ratchetEncrypt,
+  ratchetDecrypt,
 } from '../index.js';
 
 describe('NIZ Crypto Core & QR Lifecycle (Phase 2)', () => {
@@ -111,5 +116,61 @@ describe('NIZ Crypto Core & QR Lifecycle (Phase 2)', () => {
     assert.throws(() => parseNizQrPayload('https://malicious-site.com'), /Unrecognized NIZ QR/);
     assert.throws(() => parseNizQrPayload('niz:id:invalid_id?ik=test&fp=test'), /Invalid Public ID/);
     assert.throws(() => parseNizQrPayload('niz:invite:short?creator=foo'), /Invalid or corrupted/);
+  });
+
+  it('Phase 4: Double Ratchet session ping-pong, burst, and out-of-order delivery', async () => {
+    await _sodium.ready;
+    const sodium = _sodium;
+
+    // Simulate initial shared master secret established via X3DH handshake
+    const sharedMasterSecret = crypto.randomBytes(32);
+    const bobDhKeyPair = sodium.crypto_kx_keypair();
+    const bobDhPubBase64 = sodium.to_base64(bobDhKeyPair.publicKey, sodium.base64_variants.ORIGINAL);
+
+    // Initialize Alice and Bob
+    const aliceSession = await initAliceSession(sharedMasterSecret, bobDhPubBase64);
+    const bobSession = await initBobSession(sharedMasterSecret, bobDhKeyPair);
+
+    // 1. Alice sends message to Bob
+    const msg1 = await ratchetEncrypt(aliceSession, 'Hello Bob! This is message 1');
+    const decrypted1 = await ratchetDecrypt(bobSession, msg1);
+    assert.equal(decrypted1, 'Hello Bob! This is message 1');
+
+    // 2. Bob replies to Alice (DH Ratchet step triggered)
+    const reply1 = await ratchetEncrypt(bobSession, 'Hi Alice! Received message 1 loud and clear');
+    const decryptedReply1 = await ratchetDecrypt(aliceSession, reply1);
+    assert.equal(decryptedReply1, 'Hi Alice! Received message 1 loud and clear');
+
+    // 3. Alice sends a burst of 3 consecutive messages before Bob replies
+    const burstA = await ratchetEncrypt(aliceSession, 'Burst message A');
+    const burstB = await ratchetEncrypt(aliceSession, 'Burst message B');
+    const burstC = await ratchetEncrypt(aliceSession, 'Burst message C');
+
+    // 4. Out-of-Order Delivery: Bob receives burstC first, then burstA, then burstB
+    const decC = await ratchetDecrypt(bobSession, burstC);
+    assert.equal(decC, 'Burst message C');
+
+    const decA = await ratchetDecrypt(bobSession, burstA);
+    assert.equal(decA, 'Burst message A');
+
+    const decB = await ratchetDecrypt(bobSession, burstB);
+    assert.equal(decB, 'Burst message B');
+
+    // 5. Replay Attack Test: Attempt to replay burstB -> Must throw error!
+    await assert.rejects(
+      async () => {
+        await ratchetDecrypt(bobSession, burstB);
+      },
+      /AEAD Decryption failed/
+    );
+
+    // 6. Tampering Test: Modify one byte of ciphertext -> Must fail MAC verification!
+    const tamperedPayload = { ...burstA, ciphertext: 'AAAA' + burstA.ciphertext.slice(4) };
+    await assert.rejects(
+      async () => {
+        await ratchetDecrypt(bobSession, tamperedPayload);
+      },
+      /AEAD Decryption failed: MAC verification failed/
+    );
   });
 });

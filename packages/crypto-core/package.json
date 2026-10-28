@@ -14,10 +14,11 @@
   "dependencies": {
     "@niz/shared-types": "*",
     "@niz/validation": "*",
-    "libsodium-wrappers-sumo": "^0.7.15"
+    "libsodium-sumo": "^0.8.4",
+    "libsodium-wrappers-sumo": "^0.8.4"
   },
   "devDependencies": {
-    "@types/libsodium-wrappers-sumo": "^0.7.13",
+    "@types/libsodium-wrappers": "^0.7.14",
     "@types/node": "^22.5.0",
     "typescript": "^5.5.4"
   }
