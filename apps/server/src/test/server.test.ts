@@ -975,4 +975,180 @@ describe('NIZ Chat Server & Security Invariants', () => {
     assert.equal(oversizeRes.statusCode, 413);
     assert.equal(JSON.parse(oversizeRes.body).error, 'PAYLOAD_TOO_LARGE');
   });
+
+  it('Phase 7: Multi-device linking, listing, and device revocation with queue purge', async () => {
+    const userId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const primaryDevId = crypto.randomUUID();
+    const secondaryDevId = crypto.randomUUID();
+
+    // 1. Register Primary Device
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: userId,
+        device: {
+          deviceId: primaryDevId,
+          publicIdentityKey: Buffer.from('mock-primary-identity-key-32b--').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-primary-signed-prekey-32b-').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+          deviceName: 'Primary Laptop',
+        },
+      },
+    });
+
+    // 2. Link Secondary Device
+    const linkRes = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/devices/link',
+      headers: { 'x-sender-public-id': userId },
+      payload: {
+        publicId: userId,
+        device: {
+          deviceId: secondaryDevId,
+          publicIdentityKey: Buffer.from('mock-secondary-identity-key-32b').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-secondary-prekey-32b-long-').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+          deviceName: 'Mobile Phone',
+        },
+      },
+    });
+    assert.equal(linkRes.statusCode, 201);
+
+    // 3. List devices -> 2 active devices
+    const listRes = await app.inject({
+      method: 'GET',
+      url: `/v1/identity/${userId}/devices`,
+    });
+    assert.equal(listRes.statusCode, 200);
+    const devices = JSON.parse(listRes.body).devices;
+    assert.equal(devices.length, 2);
+
+    // 4. Enqueue a message targeted at the secondary device
+    const envId = crypto.randomUUID();
+    await storage.enqueueMessage({
+      envelopeId: envId,
+      senderPublicId: `niz_id_${crypto.randomBytes(20).toString('hex')}`,
+      senderDeviceId: crypto.randomUUID(),
+      recipientPublicId: userId,
+      recipientDeviceId: secondaryDevId,
+      ratchetHeader: { dhPublicKey: 'mock', pn: 0, n: 0 },
+      ciphertext: 'opaque-ciphertext',
+      nonce: 'opaque-nonce',
+      protocolVersion: 'niz-dr-v1',
+      createdAt: new Date().toISOString(),
+    });
+
+    // Verify message is in queue for secondary device
+    const pendingBefore = await storage.getPendingMessages(secondaryDevId);
+    assert.equal(pendingBefore.length, 1);
+
+    // 5. Revoke Secondary Device
+    const revokeRes = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/devices/revoke',
+      headers: { 'x-sender-public-id': userId },
+      payload: { deviceId: secondaryDevId },
+    });
+    assert.equal(revokeRes.statusCode, 200);
+    assert.equal(JSON.parse(revokeRes.body).revokedDeviceId, secondaryDevId);
+
+    // 6. Verify queue for revoked device is immediately purged
+    const pendingAfter = await storage.getPendingMessages(secondaryDevId);
+    assert.equal(pendingAfter.length, 0);
+
+    // 7. Negative Security Invariant: Unauthorized device linking rejection
+    const unauthLinkRes = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/devices/link',
+      headers: { 'x-sender-public-id': 'niz_id_attacker' },
+      payload: {
+        publicId: userId,
+        device: {
+          deviceId: crypto.randomUUID(),
+          publicIdentityKey: 'mock',
+          publicSignedPrekey: 'mock',
+          signedPrekeySignature: 'mock',
+        },
+      },
+    });
+    assert.equal(unauthLinkRes.statusCode, 401);
+  });
+
+  it('Phase 7: Zero-Knowledge encrypted backup vault sync and secret rejection', async () => {
+    const userId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const devId = crypto.randomUUID();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: userId,
+        device: {
+          deviceId: devId,
+          publicIdentityKey: Buffer.from('mock-user-identity-key-32b-str-').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-user-signed-prekey-32b-str').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    const mockVault = {
+      version: 1,
+      algorithm: 'argon2id-xchacha20poly1305',
+      kdf: {
+        salt: '0123456789abcdef0123456789abcdef',
+        opslimit: 2,
+        memlimit: 67108864,
+        alg: 2,
+      },
+      ciphertext: Buffer.from('encrypted-vault-opaque-ciphertext-bytes').toString('base64'),
+      nonce: 'abcdef0123456789abcdef0123456789abcdef0123456789',
+      createdAt: new Date().toISOString(),
+    };
+
+    // 1. Sync encrypted backup vault
+    const syncRes = await app.inject({
+      method: 'POST',
+      url: '/v1/backup/vault',
+      headers: { 'x-sender-public-id': userId },
+      payload: mockVault,
+    });
+    assert.equal(syncRes.statusCode, 200);
+
+    // 2. Retrieve synced backup vault
+    const getVaultRes = await app.inject({
+      method: 'GET',
+      url: '/v1/backup/vault',
+      headers: { 'x-sender-public-id': userId },
+    });
+    assert.equal(getVaultRes.statusCode, 200);
+    assert.equal(JSON.parse(getVaultRes.body).vault.ciphertext, mockVault.ciphertext);
+
+    // 3. SECURITY INVARIANT: Rejects vault payload containing private keys or passphrases
+    const secretLeakRes = await app.inject({
+      method: 'POST',
+      url: '/v1/backup/vault',
+      headers: { 'x-sender-public-id': userId },
+      payload: {
+        ...mockVault,
+        passphrase: 'super_secret_plaintext_password_leak',
+      },
+    });
+    assert.equal(secretLeakRes.statusCode, 400);
+
+    // 4. Account closure purges backup vault
+    await app.inject({
+      method: 'DELETE',
+      url: `/v1/identity/${userId}`,
+      headers: { 'x-sender-public-id': userId },
+    });
+
+    const postDeleteVaultRes = await app.inject({
+      method: 'GET',
+      url: '/v1/backup/vault',
+      headers: { 'x-sender-public-id': userId },
+    });
+    assert.equal(JSON.parse(postDeleteVaultRes.body).vault, null);
+  });
 });

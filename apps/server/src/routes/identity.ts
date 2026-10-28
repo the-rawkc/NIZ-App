@@ -65,6 +65,136 @@ export const identityRoutes = (storage: IStorageAdapter): FastifyPluginAsync => 
       return reply.send({ publicId, devices });
     });
 
+    // Link a new secondary device (Phase 7)
+    fastify.post('/v1/identity/devices/link', async (request, reply) => {
+      try {
+        assertNoSecretsInPayload(request.body);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Forbidden secret field detected';
+        logger.warn('Security invariant rejection on device linking', { reason: msg });
+        return reply.status(400).send({ error: 'BAD_REQUEST', message: msg });
+      }
+
+      const caller = request.headers['x-sender-public-id'] as string | undefined;
+      const rawBody = request.body as Record<string, unknown> | undefined;
+
+      if (!caller || (rawBody && rawBody.publicId && caller !== rawBody.publicId)) {
+        return reply.status(401).send({ error: 'UNAUTHORIZED_DEVICE_LINKING' });
+      }
+
+      const parseResult = RegisterIdentitySchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          error: 'VALIDATION_ERROR',
+          details: parseResult.error.format(),
+        });
+      }
+
+      const { publicId, device } = parseResult.data;
+
+      const account = await storage.getAccount(publicId);
+      if (!account) {
+        return reply.status(404).send({ error: 'ACCOUNT_NOT_FOUND' });
+      }
+
+      await storage.createDevice({
+        deviceId: device.deviceId,
+        accountPublicId: publicId,
+        publicIdentityKey: device.publicIdentityKey,
+        publicSignedPrekey: device.publicSignedPrekey,
+        signedPrekeySignature: device.signedPrekeySignature,
+        deviceName: device.deviceName || 'Linked Secondary Device',
+        createdAt: new Date().toISOString(),
+      });
+
+      logger.info('Secondary device linked to account', {
+        senderPublicId: publicId,
+        deviceId: device.deviceId,
+      });
+
+      return reply.status(201).send({
+        success: true,
+        publicId,
+        deviceId: device.deviceId,
+        linkedAt: new Date().toISOString(),
+      });
+    });
+
+    // Revoke a linked device (Phase 7)
+    fastify.post('/v1/identity/devices/revoke', async (request, reply) => {
+      const caller = request.headers['x-sender-public-id'] as string | undefined;
+      const { deviceId } = (request.body as { deviceId?: string }) || {};
+
+      if (!caller) {
+        return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      }
+
+      if (!deviceId) {
+        return reply.status(400).send({ error: 'MISSING_DEVICE_ID' });
+      }
+
+      const dev = await storage.getDevice(deviceId);
+      if (!dev) {
+        return reply.status(404).send({ error: 'DEVICE_NOT_FOUND' });
+      }
+
+      if (dev.accountPublicId !== caller) {
+        return reply.status(403).send({ error: 'FORBIDDEN_DEVICE_REVOCATION' });
+      }
+
+      await storage.revokeDevice(deviceId);
+      logger.info('Device revoked by account owner', {
+        senderPublicId: caller,
+        deviceId,
+      });
+
+      return reply.send({
+        success: true,
+        revokedDeviceId: deviceId,
+        revokedAt: new Date().toISOString(),
+      });
+    });
+
+    // Synchronize Zero-Knowledge Encrypted Backup Vault (Phase 7)
+    fastify.post('/v1/backup/vault', async (request, reply) => {
+      const caller = request.headers['x-sender-public-id'] as string | undefined;
+      if (!caller) {
+        return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      }
+
+      try {
+        assertNoSecretsInPayload(request.body);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Forbidden secret field detected';
+        logger.warn('Security invariant rejection on backup sync', { reason: msg });
+        return reply.status(400).send({ error: 'BAD_REQUEST', message: msg });
+      }
+
+      const vault = request.body as any;
+      if (!vault || vault.version !== 1 || !vault.ciphertext || !vault.nonce || !vault.kdf) {
+        return reply.status(400).send({ error: 'INVALID_VAULT_STRUCTURE' });
+      }
+
+      await storage.saveBackupVault(caller, vault);
+      logger.info('Encrypted backup vault synced', { senderPublicId: caller });
+
+      return reply.send({
+        success: true,
+        syncedAt: new Date().toISOString(),
+      });
+    });
+
+    // Retrieve Zero-Knowledge Encrypted Backup Vault (Phase 7)
+    fastify.get('/v1/backup/vault', async (request, reply) => {
+      const caller = request.headers['x-sender-public-id'] as string | undefined;
+      if (!caller) {
+        return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      }
+
+      const vault = await storage.getBackupVault(caller);
+      return reply.send({ vault });
+    });
+
     // Account Closure & Permanent Data Deletion (FR-020)
     fastify.delete<{ Params: { publicId: string } }>('/v1/identity/:publicId', async (request, reply) => {
       const { publicId } = request.params;

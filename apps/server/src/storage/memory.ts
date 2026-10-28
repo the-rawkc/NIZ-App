@@ -10,6 +10,7 @@ import type {
   AdminAuditEvent,
   MessageEnvelope,
   AttachmentRecord,
+  EncryptedBackupVault,
 } from '@niz/shared-types';
 import type { IStorageAdapter } from './interface.js';
 
@@ -21,6 +22,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
   private abuseReports: ReportAbuseRecord[] = [];
   private messageQueue = new Map<string, MessageEnvelope>();
   private attachments = new Map<string, { record: AttachmentRecord; data: Buffer }>();
+  private backupVaults = new Map<string, EncryptedBackupVault>();
   private auditEvents: AdminAuditEvent[] = [];
   private featureFlags = new Map<string, FeatureFlag>([
     [
@@ -82,6 +84,13 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     const dev = this.devices.get(deviceId);
     if (!dev) return false;
     dev.revokedAt = new Date().toISOString();
+
+    // Immediately purge any queued messages addressed to revoked device
+    for (const [envId, env] of this.messageQueue.entries()) {
+      if (env.recipientDeviceId === deviceId) {
+        this.messageQueue.delete(envId);
+      }
+    }
     return true;
   }
 
@@ -255,6 +264,9 @@ export class MemoryStorageAdapter implements IStorageAdapter {
       }
     }
 
+    // Purge encrypted backup vaults
+    this.backupVaults.delete(publicId);
+
     return true;
   }
 
@@ -334,5 +346,16 @@ export class MemoryStorageAdapter implements IStorageAdapter {
 
   async deleteAttachment(attachmentId: string): Promise<boolean> {
     return this.attachments.delete(attachmentId);
+  }
+
+  // Encrypted Backup Vaults
+  async saveBackupVault(accountPublicId: string, vault: EncryptedBackupVault): Promise<void> {
+    this.backupVaults.set(accountPublicId, { ...vault });
+  }
+
+  async getBackupVault(accountPublicId: string): Promise<EncryptedBackupVault | null> {
+    const vault = this.backupVaults.get(accountPublicId);
+    if (!vault) return null;
+    return { ...vault };
   }
 }

@@ -5,3 +5,4 @@ export * from './messaging.js';
 export * from './admin.js';
 export * from './metrics.js';
 export * from './attachment.js';
+export * from './backup.js';

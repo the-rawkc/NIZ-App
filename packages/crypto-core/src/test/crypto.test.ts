@@ -15,6 +15,8 @@ import {
   ratchetDecrypt,
   encryptAttachment,
   decryptAttachment,
+  createEncryptedBackup,
+  restoreEncryptedBackup,
 } from '../index.js';
 
 describe('NIZ Crypto Core & QR Lifecycle (Phase 2)', () => {
@@ -220,6 +222,70 @@ describe('NIZ Crypto Core & QR Lifecycle (Phase 2)', () => {
         await decryptAttachment(tamperedCiphertext, tamperedHashMetadata);
       },
       /ATTACHMENT_DECRYPTION_FAILED/
+    );
+  });
+
+  it('Phase 7: Argon2id encrypted backup vault creation, restoration, and authentication boundaries', async () => {
+    const backupData = {
+      publicId: 'niz_id_11223344556677889900aabbccddeeff00112233',
+      privateIdentityKeyBase64: Buffer.from('mock-private-identity-key-32b-str').toString('base64'),
+      privateSignedPrekeyBase64: Buffer.from('mock-private-signed-prekey-32b-st').toString('base64'),
+      contacts: [
+        {
+          counterpartPublicId: 'niz_id_99887766554433221100ffeeddccbbaa00112233',
+          counterpartIdentityKey: Buffer.from('mock-counterpart-public-id-key--').toString('base64'),
+          verified: true,
+        },
+      ],
+      exportedAt: new Date().toISOString(),
+    };
+
+    const strongPassphrase = 'correct horse battery staple 2026';
+
+    // 1. Create encrypted backup vault
+    const vault = await createEncryptedBackup(strongPassphrase, backupData);
+
+    assert.equal(vault.version, 1);
+    assert.equal(vault.algorithm, 'argon2id-xchacha20poly1305');
+    assert.equal(vault.kdf.salt.length, 32); // 16 bytes hex
+    assert.equal(vault.nonce.length, 48); // 24 bytes hex
+    assert.ok(vault.ciphertext.length > 50);
+
+    // 2. Restore backup vault with correct passphrase
+    const restored = await restoreEncryptedBackup(strongPassphrase, vault);
+    assert.equal(restored.publicId, backupData.publicId);
+    assert.equal(restored.privateIdentityKeyBase64, backupData.privateIdentityKeyBase64);
+    assert.equal(restored.privateSignedPrekeyBase64, backupData.privateSignedPrekeyBase64);
+    assert.equal(restored.contacts.length, 1);
+    assert.equal(restored.contacts[0].counterpartPublicId, backupData.contacts[0].counterpartPublicId);
+    assert.equal(restored.contacts[0].verified, true);
+
+    // 3. Negative Security Invariant: Wrong passphrase rejection
+    await assert.rejects(
+      async () => {
+        await restoreEncryptedBackup('incorrect-wrong-passphrase', vault);
+      },
+      /VAULT_RESTORE_FAILED/
+    );
+
+    // 4. Negative Security Invariant: Tampered vault ciphertext rejection
+    const tamperedVault = {
+      ...vault,
+      ciphertext: Buffer.from('corrupted-tampered-ciphertext-payload-bytes-now-invalid').toString('base64'),
+    };
+    await assert.rejects(
+      async () => {
+        await restoreEncryptedBackup(strongPassphrase, tamperedVault);
+      },
+      /VAULT_RESTORE_FAILED/
+    );
+
+    // 5. Negative Security Invariant: Weak/short passphrase rejection (<8 chars)
+    await assert.rejects(
+      async () => {
+        await createEncryptedBackup('short', backupData);
+      },
+      /Passphrase must be at least 8 characters long/
     );
   });
 });

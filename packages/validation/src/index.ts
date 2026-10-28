@@ -131,6 +131,9 @@ const FORBIDDEN_SECRET_KEYS = [
   'identityprivatekey',
   'identity_private_key',
   'password',
+  'passphrase',
+  'recoverykey',
+  'recovery_key',
   'plaintextbody',
   'plaintext_body',
 ];

@@ -11,11 +11,19 @@ import {
   ratchetDecrypt,
   encryptAttachment,
   decryptAttachment,
+  createEncryptedBackup,
+  restoreEncryptedBackup,
   type ClientIdentityBundle,
   type NizParsedQr,
   type RatchetSessionState,
 } from '@niz/crypto-core';
-import type { ContactSummary, MessageEnvelope, EncryptedAttachmentMetadata } from '@niz/shared-types';
+import type {
+  ContactSummary,
+  MessageEnvelope,
+  EncryptedAttachmentMetadata,
+  PublicDevice,
+  EncryptedBackupVault,
+} from '@niz/shared-types';
 import { NizLogo } from './components/NizLogo';
 
 const API_BASE = 'http://localhost:4000';
@@ -83,6 +91,14 @@ export const App: React.FC = () => {
   const [messageInput, setMessageInput] = useState<string>('');
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState<boolean>(false);
+
+  // Multi-Device & Backup state (Phase 7)
+  const [devices, setDevices] = useState<PublicDevice[]>([]);
+  const [backupPassphrase, setBackupPassphrase] = useState<string>('');
+  const [restorePassphrase, setRestorePassphrase] = useState<string>('');
+  const [isExportingBackup, setIsExportingBackup] = useState<boolean>(false);
+  const [isRestoringBackup, setIsRestoringBackup] = useState<boolean>(false);
+  const backupFileRef = useRef<HTMLInputElement | null>(null);
 
   const ratchetSessionsRef = useRef<Map<string, RatchetSessionState>>(new Map());
   const wsRef = useRef<WebSocket | null>(null);
@@ -282,6 +298,141 @@ export const App: React.FC = () => {
       }
     } catch {
       // ignore
+    }
+  };
+
+  // Fetch linked devices (Phase 7)
+  const fetchDevices = async () => {
+    if (!identity) return;
+    try {
+      const res = await fetch(`${API_BASE}/v1/identity/${identity.publicId}/devices`);
+      if (res.ok) {
+        const data = await res.json();
+        setDevices(data.devices || []);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Revoke device (Phase 7)
+  const handleRevokeDevice = async (deviceId: string) => {
+    if (!identity) return;
+    try {
+      const res = await fetch(`${API_BASE}/v1/identity/devices/revoke`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-sender-public-id': identity.publicId,
+        },
+        body: JSON.stringify({ deviceId }),
+      });
+      if (res.ok) {
+        showNotification('Device revoked. It can no longer receive or decrypt messages.');
+        fetchDevices();
+      }
+    } catch {
+      showNotification('Failed to revoke device');
+    }
+  };
+
+  // Export Encrypted Backup Vault (Argon2id + XChaCha20-Poly1305) (Phase 7)
+  const handleExportBackup = async () => {
+    if (!identity) return;
+    if (!backupPassphrase || backupPassphrase.length < 8) {
+      showNotification('Passphrase must be at least 8 characters long.');
+      return;
+    }
+
+    setIsExportingBackup(true);
+    try {
+      const backupPayload = {
+        publicId: identity.publicId,
+        privateIdentityKeyBase64: identity.privateKeys.privateIdentityKeyBase64,
+        privateSignedPrekeyBase64: identity.privateKeys.privateSignedPrekeyBase64,
+        contacts: contacts.map((c) => ({
+          counterpartPublicId: c.counterpartPublicId,
+          counterpartIdentityKey: c.counterpartIdentityKey,
+          verified: verifiedContacts.has(c.id),
+        })),
+        exportedAt: new Date().toISOString(),
+      };
+
+      const vault = await createEncryptedBackup(backupPassphrase, backupPayload);
+
+      // 1. Download file to client
+      const blob = new Blob([JSON.stringify(vault, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `niz-backup-${new Date().toISOString().split('T')[0]}.nizvault`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // 2. Sync to zero-knowledge server vault
+      await fetch(`${API_BASE}/v1/backup/vault`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-sender-public-id': identity.publicId,
+        },
+        body: JSON.stringify(vault),
+      });
+
+      setBackupPassphrase('');
+      showNotification('Encrypted backup vault exported and synced!');
+    } catch (err: unknown) {
+      showNotification(err instanceof Error ? err.message : 'Backup export failed');
+    } finally {
+      setIsExportingBackup(false);
+    }
+  };
+
+  // Restore from vault file (Phase 7)
+  const handleFileRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!restorePassphrase || restorePassphrase.length < 8) {
+      showNotification('Enter your passphrase before selecting the backup file.');
+      return;
+    }
+
+    setIsRestoringBackup(true);
+    try {
+      const text = await file.text();
+      const vault = JSON.parse(text) as EncryptedBackupVault;
+      const restored = await restoreEncryptedBackup(restorePassphrase, vault);
+
+      // Reconstruct client identity bundle
+      const safetyFingerprint = await computeSafetyFingerprint(
+        restored.privateIdentityKeyBase64,
+        restored.privateIdentityKeyBase64
+      );
+
+      setIdentity({
+        publicId: restored.publicId,
+        deviceId: crypto.randomUUID(),
+        publicIdentityKeyBase64: restored.privateIdentityKeyBase64,
+        publicSignedPrekeyBase64: restored.privateSignedPrekeyBase64,
+        signedPrekeySignatureBase64: '',
+        safetyFingerprint,
+        registrationPayload: {} as any,
+        privateKeys: {
+          privateIdentityKeyBase64: restored.privateIdentityKeyBase64,
+          privateSignedPrekeyBase64: restored.privateSignedPrekeyBase64,
+        },
+      });
+
+      setRestorePassphrase('');
+      showNotification(`Identity "${restored.publicId}" successfully restored!`);
+    } catch (err: unknown) {
+      showNotification(err instanceof Error ? err.message : 'Restore failed: invalid passphrase or corrupted vault.');
+    } finally {
+      setIsRestoringBackup(false);
+      if (backupFileRef.current) backupFileRef.current.value = '';
     }
   };
 
@@ -761,12 +912,14 @@ export const App: React.FC = () => {
   }, [identity, activeChatContact]);
 
   useEffect(() => {
-    if (activeTab === 'requests') {
+    if (activeTab === 'identity') {
+      fetchDevices();
+    } else if (activeTab === 'requests') {
       fetchPendingRequests();
     } else if (activeTab === 'contacts' || activeTab === 'chat') {
       fetchContacts();
     }
-  }, [activeTab]);
+  }, [activeTab, identity]);
 
   return (
     <div style={{ maxWidth: '960px', margin: '0 auto', padding: '36px 20px', width: '100%' }}>
@@ -943,6 +1096,135 @@ export const App: React.FC = () => {
                 </div>
               </div>
             </div>
+          )}
+
+          {identity && (
+            <>
+              {/* Linked Devices Section (Phase 7) */}
+              <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: '#F9FAFB' }}>Linked Devices</h3>
+                  <button onClick={fetchDevices} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+                    ↻ Refresh Devices
+                  </button>
+                </div>
+                {devices.length === 0 ? (
+                  <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>No other devices linked.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {devices.map((d) => (
+                      <div
+                        key={d.deviceId}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '12px 16px',
+                          background: '#090D14',
+                          borderRadius: '8px',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#F9FAFB' }}>
+                            {d.deviceName || 'Client Device'}{' '}
+                            {d.deviceId === identity.deviceId && (
+                              <span style={{ fontSize: '0.75rem', color: '#10B981', fontWeight: 500 }}>(This Device)</span>
+                            )}
+                          </div>
+                          <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                            ID: {d.deviceId} · Registered: {new Date(d.createdAt).toLocaleDateString()}
+                          </div>
+                          {d.revokedAt && (
+                            <span style={{ fontSize: '0.72rem', color: '#EF4444', fontWeight: 600 }}>
+                              Revoked at {new Date(d.revokedAt).toLocaleTimeString()}
+                            </span>
+                          )}
+                        </div>
+                        {d.deviceId !== identity.deviceId && !d.revokedAt && (
+                          <button
+                            onClick={() => handleRevokeDevice(d.deviceId)}
+                            className="btn-secondary"
+                            style={{ color: '#EF4444', borderColor: '#7F1D1D', padding: '6px 12px', fontSize: '0.8rem' }}
+                          >
+                            Revoke Device
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Zero-Knowledge Encrypted Backup & Secure Recovery (Phase 7) */}
+              <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--color-border)' }}>
+                <h3 style={{ fontSize: '1.1rem', color: '#F9FAFB', marginBottom: '8px' }}>
+                  Encrypted Backup & Recovery (Argon2id + XChaCha20-Poly1305)
+                </h3>
+                <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', lineHeight: 1.6, marginBottom: '20px' }}>
+                  Create an encrypted, password-protected recovery vault for your identity and contacts. The server never sees your passphrase or unencrypted backup keys.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                  {/* Export Backup Vault */}
+                  <div style={{ background: '#090D14', padding: '16px', borderRadius: '10px', border: '1px solid var(--color-border)' }}>
+                    <h4 style={{ fontSize: '0.95rem', color: '#10B981', marginBottom: '10px' }}>
+                      Export Encrypted Vault
+                    </h4>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
+                      Derives an encryption key via Argon2id. Generates a <code>.nizvault</code> file.
+                    </p>
+                    <input
+                      type="password"
+                      placeholder="Passphrase (min 8 chars)"
+                      value={backupPassphrase}
+                      onChange={(e) => setBackupPassphrase(e.target.value)}
+                      style={{ width: '100%', padding: '10px', background: '#111827', border: '1px solid var(--color-border)', borderRadius: '6px', color: '#F9FAFB', marginBottom: '12px' }}
+                    />
+                    <button
+                      onClick={handleExportBackup}
+                      disabled={isExportingBackup || !backupPassphrase}
+                      className="btn-primary"
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      {isExportingBackup ? 'Deriving Argon2id...' : '🔒 Export & Sync Vault'}
+                    </button>
+                  </div>
+
+                  {/* Restore Backup Vault */}
+                  <div style={{ background: '#090D14', padding: '16px', borderRadius: '10px', border: '1px solid var(--color-border)' }}>
+                    <h4 style={{ fontSize: '0.95rem', color: '#38BDF8', marginBottom: '10px' }}>
+                      Restore from Backup Vault
+                    </h4>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
+                      Enter your vault passphrase and select your <code>.nizvault</code> file.
+                    </p>
+                    <input
+                      type="password"
+                      placeholder="Vault Passphrase"
+                      value={restorePassphrase}
+                      onChange={(e) => setRestorePassphrase(e.target.value)}
+                      style={{ width: '100%', padding: '10px', background: '#111827', border: '1px solid var(--color-border)', borderRadius: '6px', color: '#F9FAFB', marginBottom: '12px' }}
+                    />
+                    <input
+                      type="file"
+                      ref={backupFileRef}
+                      onChange={handleFileRestore}
+                      style={{ display: 'none' }}
+                      accept=".nizvault,.json"
+                    />
+                    <button
+                      onClick={() => backupFileRef.current?.click()}
+                      disabled={isRestoringBackup || !restorePassphrase}
+                      className="btn-secondary"
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      {isRestoringBackup ? 'Decrypting Vault...' : '📂 Select .nizvault File'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </section>
       )}

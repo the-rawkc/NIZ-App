@@ -10,6 +10,7 @@ import type {
   AdminAuditEvent,
   MessageEnvelope,
   AttachmentRecord,
+  EncryptedBackupVault,
 } from '@niz/shared-types';
 
 export interface IStorageAdapter {
@@ -58,6 +59,10 @@ export interface IStorageAdapter {
   saveAttachment(record: AttachmentRecord, blob: Buffer): Promise<void>;
   getAttachment(attachmentId: string): Promise<{ record: AttachmentRecord; data: Buffer } | null>;
   deleteAttachment(attachmentId: string): Promise<boolean>;
+
+  // Encrypted Backup Vaults (Zero-knowledge ciphertext only)
+  saveBackupVault(accountPublicId: string, vault: EncryptedBackupVault): Promise<void>;
+  getBackupVault(accountPublicId: string): Promise<EncryptedBackupVault | null>;
 
   // Ciphertext Message Queue
   enqueueMessage(envelope: MessageEnvelope): Promise<void>;
