@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: niz_prod_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-niz_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-niz_prod_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-niz_chat}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - prod_postgres_data:/var/lib/postgresql/data
+      - ./apps/server/src/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - niz_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-niz_user} -d ${POSTGRES_DB:-niz_chat}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: niz_prod_server
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      STORAGE_ADAPTER: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-niz_user}:${POSTGRES_PASSWORD:-niz_prod_secure_password}@postgres:5432/${POSTGRES_DB:-niz_chat}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost,http://localhost:5173,http://localhost:5174}
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - niz_internal
+      - niz_public
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: niz_prod_web
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    networks:
+      - niz_public
+
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+    container_name: niz_prod_admin
+    restart: always
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
+    networks:
+      - niz_public
+
+networks:
+  niz_internal:
+    internal: true
+  niz_public:
+
+volumes:
+  prod_postgres_data:
+    driver: local

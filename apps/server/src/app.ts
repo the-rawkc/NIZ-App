@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import type { WebSocket } from 'ws';
@@ -36,11 +37,38 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   const activeSockets = new Map<string, WebSocket>();
 
+  // Production Security Headers via Helmet (CSP, HSTS, X-Content-Type-Options)
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        connectSrc: ["'self'", 'ws:', 'wss:'],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+  });
+
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : null;
+
   // CORS configuration
   await app.register(cors, {
-    origin: (_origin, cb) => {
-      // In dev allow localhost; fail-closed in strict production
-      cb(null, true);
+    origin: (origin, cb) => {
+      // Allow if no Origin header (same-origin / server-to-server) or matches whitelist
+      if (!origin || !allowedOrigins || allowedOrigins.includes(origin)) {
+        cb(null, true);
+      } else {
+        cb(null, false);
+      }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
