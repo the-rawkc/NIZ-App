@@ -11,6 +11,8 @@ import type {
   MessageEnvelope,
   AttachmentRecord,
   EncryptedBackupVault,
+  SubscriptionRecord,
+  SubscriptionMetrics,
 } from '@niz/shared-types';
 
 export interface IStorageAdapter {
@@ -63,6 +65,11 @@ export interface IStorageAdapter {
   // Encrypted Backup Vaults (Zero-knowledge ciphertext only)
   saveBackupVault(accountPublicId: string, vault: EncryptedBackupVault): Promise<void>;
   getBackupVault(accountPublicId: string): Promise<EncryptedBackupVault | null>;
+
+  // Subscriptions & Billing (Phase 8)
+  getSubscription(publicId: string): Promise<SubscriptionRecord>;
+  updateSubscription(publicId: string, update: Partial<SubscriptionRecord>): Promise<SubscriptionRecord>;
+  getSubscriptionMetrics(): Promise<SubscriptionMetrics>;
 
   // Ciphertext Message Queue
   enqueueMessage(envelope: MessageEnvelope): Promise<void>;

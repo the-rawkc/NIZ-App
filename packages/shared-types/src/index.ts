@@ -6,3 +6,4 @@ export * from './admin.js';
 export * from './metrics.js';
 export * from './attachment.js';
 export * from './backup.js';
+export * from './billing.js';

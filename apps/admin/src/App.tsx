@@ -23,6 +23,12 @@ export const App: React.FC = () => {
     registeredAccountsEstimate: number;
     errorRateLastHour: number;
     retentionPolicy: string;
+    subscriptions?: {
+      free: number;
+      pro: number;
+      business: number;
+      totalSubscribers: number;
+    };
   } | null>(null);
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
   const [auditLogs, setAuditLogs] = useState<AdminAuditEvent[]>([]);
@@ -413,6 +419,16 @@ export const App: React.FC = () => {
                 </div>
                 <div style={{ color: '#6B7280', fontSize: '0.75rem', marginTop: '4px' }}>
                   Zero private keys retained
+                </div>
+              </div>
+
+              <div style={{ background: '#111827', padding: '20px', borderRadius: '12px', border: '1px solid #232D3F' }}>
+                <div style={{ color: '#9CA3AF', fontSize: '0.8rem' }}>Subscription Tiers (Phase 8)</div>
+                <div style={{ color: '#38BDF8', fontSize: '1.4rem', fontWeight: 700, marginTop: '4px' }}>
+                  {metrics?.subscriptions ? `${metrics.subscriptions.totalSubscribers} Paid (${metrics.subscriptions.pro} Pro)` : '0 Paid'}
+                </div>
+                <div style={{ color: '#6B7280', fontSize: '0.75rem', marginTop: '4px' }}>
+                  {metrics?.subscriptions ? `${metrics.subscriptions.free} Free (Core E2EE 100% Unpaywalled)` : 'Core E2EE Unpaywalled'}
                 </div>
               </div>
             </div>

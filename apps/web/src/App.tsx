@@ -23,6 +23,7 @@ import type {
   EncryptedAttachmentMetadata,
   PublicDevice,
   EncryptedBackupVault,
+  SubscriptionRecord,
 } from '@niz/shared-types';
 import { NizLogo } from './components/NizLogo';
 
@@ -45,7 +46,7 @@ interface ChatMessage {
 }
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'identity' | 'invite' | 'connect' | 'requests' | 'contacts' | 'chat'>('identity');
+  const [activeTab, setActiveTab] = useState<'identity' | 'invite' | 'connect' | 'requests' | 'contacts' | 'chat' | 'plans'>('identity');
   const [identity, setIdentity] = useState<ClientIdentityBundle | null>(null);
   const [permanentQrDataUrl, setPermanentQrDataUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -99,6 +100,10 @@ export const App: React.FC = () => {
   const [isExportingBackup, setIsExportingBackup] = useState<boolean>(false);
   const [isRestoringBackup, setIsRestoringBackup] = useState<boolean>(false);
   const backupFileRef = useRef<HTMLInputElement | null>(null);
+
+  // Billing & Subscription state (Phase 8)
+  const [subscription, setSubscription] = useState<SubscriptionRecord | null>(null);
+  const [isProcessingBilling, setIsProcessingBilling] = useState<boolean>(false);
 
   const ratchetSessionsRef = useRef<Map<string, RatchetSessionState>>(new Map());
   const wsRef = useRef<WebSocket | null>(null);
@@ -470,6 +475,68 @@ export const App: React.FC = () => {
       setPairwiseSafetyNumber(pairwiseFp);
     } else {
       setPairwiseSafetyNumber(identity?.safetyFingerprint || '');
+    }
+  };
+
+  // Fetch subscription (Phase 8)
+  const fetchSubscription = async () => {
+    if (!identity) return;
+    try {
+      const res = await fetch(`${API_BASE}/v1/billing/subscription`, {
+        headers: { 'x-sender-public-id': identity.publicId },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSubscription(data);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Upgrade to Pro in sandbox (Phase 8)
+  const handleUpgradeToPro = async () => {
+    if (!identity) return;
+    setIsProcessingBilling(true);
+    try {
+      const res = await fetch(`${API_BASE}/v1/billing/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-sender-public-id': identity.publicId,
+        },
+        body: JSON.stringify({ tier: 'PRO' }),
+      });
+      if (res.ok) {
+        showNotification('Upgraded to NIZ Pro (Sandbox simulated)! Quotas upgraded.');
+        fetchSubscription();
+      }
+    } catch (err: unknown) {
+      showNotification(err instanceof Error ? err.message : 'Upgrade failed');
+    } finally {
+      setIsProcessingBilling(false);
+    }
+  };
+
+  // Cancel subscription (Phase 8)
+  const handleCancelSubscription = async () => {
+    if (!identity) return;
+    setIsProcessingBilling(true);
+    try {
+      const res = await fetch(`${API_BASE}/v1/billing/cancel`, {
+        method: 'POST',
+        headers: {
+          'x-sender-public-id': identity.publicId,
+        },
+      });
+      if (res.ok) {
+        showNotification('Subscription canceled. Your account safely remains on FREE with 100% E2EE active.');
+        fetchSubscription();
+      }
+    } catch {
+      showNotification('Failed to cancel subscription');
+    } finally {
+      setIsProcessingBilling(false);
     }
   };
 
@@ -918,6 +985,8 @@ export const App: React.FC = () => {
       fetchPendingRequests();
     } else if (activeTab === 'contacts' || activeTab === 'chat') {
       fetchContacts();
+    } else if (activeTab === 'plans') {
+      fetchSubscription();
     }
   }, [activeTab, identity]);
 
@@ -1023,6 +1092,12 @@ export const App: React.FC = () => {
           className={activeTab === 'chat' ? 'btn-primary' : 'btn-secondary'}
         >
           Encrypted Chat
+        </button>
+        <button
+          onClick={() => setActiveTab('plans')}
+          className={activeTab === 'plans' ? 'btn-primary' : 'btn-secondary'}
+        >
+          Plans & Quotas
         </button>
       </nav>
 
@@ -1792,6 +1867,119 @@ export const App: React.FC = () => {
               </div>
             </>
           )}
+        </section>
+      )}
+
+      {/* Tab 7: Plans & Quotas (Phase 8) */}
+      {activeTab === 'plans' && (
+        <section className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', color: '#F9FAFB' }}>Plans & Quotas</h2>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
+                Active Plan:{' '}
+                <strong style={{ color: subscription?.tier === 'PRO' ? '#38BDF8' : '#10B981' }}>
+                  {subscription?.tier || 'FREE'}
+                </strong>{' '}
+                ({subscription?.status || 'free'})
+              </p>
+            </div>
+            {subscription?.tier === 'PRO' ? (
+              <button
+                onClick={handleCancelSubscription}
+                disabled={isProcessingBilling}
+                className="btn-secondary"
+                style={{ color: '#EF4444', borderColor: '#7F1D1D' }}
+              >
+                Cancel Subscription
+              </button>
+            ) : (
+              <button
+                onClick={handleUpgradeToPro}
+                disabled={isProcessingBilling || !identity}
+                className="btn-primary"
+              >
+                {isProcessingBilling ? 'Processing...' : '⚡ Upgrade to Pro (Sandbox Demo)'}
+              </button>
+            )}
+          </div>
+
+          {/* Security Invariant Alert */}
+          <div
+            style={{
+              backgroundColor: 'rgba(16, 185, 129, 0.08)',
+              padding: '16px',
+              borderRadius: '10px',
+              border: '1px solid #10B981',
+              marginBottom: '24px',
+            }}
+          >
+            <div style={{ fontSize: '0.85rem', color: '#10B981', fontWeight: 700, marginBottom: '4px' }}>
+              🔒 Security Invariant: Core E2EE is Never Paywalled
+            </div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+              Under NIZ architectural security invariants, End-to-End Encryption, Double Ratchet session security,
+              permanent QR identities, and contact approval are completely free for all users forever. Paid plans
+              only expand storage limits and concurrent linked device capacities.
+            </p>
+          </div>
+
+          {/* Tier Comparison Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' }}>
+            {/* Free Plan */}
+            <div
+              style={{
+                background: '#090D14',
+                padding: '24px',
+                borderRadius: '12px',
+                border: subscription?.tier === 'FREE' ? '2px solid #10B981' : '1px solid var(--color-border)',
+              }}
+            >
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#F9FAFB' }}>Community Free</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10B981', margin: '8px 0' }}>
+                $0 <span style={{ fontSize: '0.8rem', color: '#9CA3AF' }}>/ forever</span>
+              </div>
+              <ul style={{ listStyle: 'none', padding: 0, margin: '16px 0', fontSize: '0.85rem', color: '#D1D5DB', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <li>✓ Full Double Ratchet E2EE Text</li>
+                <li>✓ Permanent & Ephemeral QR Codes</li>
+                <li>✓ Up to 3 Linked Devices</li>
+                <li>✓ 25MB Encrypted File Attachments</li>
+                <li>✓ 14-Day Store-and-Forward Queue</li>
+              </ul>
+            </div>
+
+            {/* Pro Plan */}
+            <div
+              style={{
+                background: '#090D14',
+                padding: '24px',
+                borderRadius: '12px',
+                border: subscription?.tier === 'PRO' ? '2px solid #38BDF8' : '1px solid var(--color-border)',
+              }}
+            >
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#F9FAFB' }}>NIZ Pro (Sandbox)</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#38BDF8', margin: '8px 0' }}>
+                $5 <span style={{ fontSize: '0.8rem', color: '#9CA3AF' }}>/ month</span>
+              </div>
+              <ul style={{ listStyle: 'none', padding: 0, margin: '16px 0', fontSize: '0.85rem', color: '#D1D5DB', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <li>✓ Everything in Free</li>
+                <li>✓ Up to 10 Linked Devices</li>
+                <li>✓ 100MB Encrypted Attachments</li>
+                <li>✓ 30-Day Queue & Blob Retention</li>
+                <li>✓ Priority Push WebSocket Service</li>
+              </ul>
+              {subscription?.tier !== 'PRO' && (
+                <button
+                  onClick={handleUpgradeToPro}
+                  disabled={isProcessingBilling || !identity}
+                  className="btn-primary"
+                  style={{ width: '100%', marginTop: '12px' }}
+                >
+                  {isProcessingBilling ? 'Processing...' : 'Upgrade to Pro'}
+                </button>
+              )}
+            </div>
+          </div>
         </section>
       )}
 

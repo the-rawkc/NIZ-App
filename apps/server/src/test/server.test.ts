@@ -1151,4 +1151,136 @@ describe('NIZ Chat Server & Security Invariants', () => {
     });
     assert.equal(JSON.parse(postDeleteVaultRes.body).vault, null);
   });
+
+  it('Phase 8: Subscription plans, sandbox checkout, webhooks, and E2EE preservation', async () => {
+    const userId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const devId = crypto.randomUUID();
+
+    // Register user
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: userId,
+        device: {
+          deviceId: devId,
+          publicIdentityKey: Buffer.from('mock-billing-identity-key-32b-st').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-billing-signed-prekey-32b-s').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // 1. Default subscription state is FREE tier
+    const subRes = await app.inject({
+      method: 'GET',
+      url: '/v1/billing/subscription',
+      headers: { 'x-sender-public-id': userId },
+    });
+    assert.equal(subRes.statusCode, 200);
+    const subData = JSON.parse(subRes.body);
+    assert.equal(subData.tier, 'FREE');
+    assert.equal(subData.status, 'free');
+    assert.equal(subData.maxDevices, 3);
+    assert.equal(subData.maxAttachmentSizeBytes, 25 * 1024 * 1024);
+
+    // 2. Simulated sandbox checkout upgrade to PRO
+    const checkoutRes = await app.inject({
+      method: 'POST',
+      url: '/v1/billing/checkout',
+      headers: { 'x-sender-public-id': userId },
+      payload: { tier: 'PRO' },
+    });
+    assert.equal(checkoutRes.statusCode, 200);
+    const checkoutData = JSON.parse(checkoutRes.body);
+    assert.equal(checkoutData.tier, 'PRO');
+    assert.equal(checkoutData.simulated, true);
+    assert.ok(checkoutData.sessionId.startsWith('sbx_sess_'));
+
+    // Verify upgraded quotas
+    const proSubRes = await app.inject({
+      method: 'GET',
+      url: '/v1/billing/subscription',
+      headers: { 'x-sender-public-id': userId },
+    });
+    assert.equal(proSubRes.statusCode, 200);
+    const proData = JSON.parse(proSubRes.body);
+    assert.equal(proData.tier, 'PRO');
+    assert.equal(proData.status, 'active');
+    assert.equal(proData.maxDevices, 10);
+    assert.equal(proData.maxAttachmentSizeBytes, 100 * 1024 * 1024);
+
+    // 3. Webhook simulation: subscription canceled
+    const webhookRes = await app.inject({
+      method: 'POST',
+      url: '/v1/billing/webhook',
+      payload: {
+        eventType: 'customer.subscription.deleted',
+        publicId: userId,
+        timestamp: new Date().toISOString(),
+      },
+    });
+    assert.equal(webhookRes.statusCode, 200);
+    assert.equal(JSON.parse(webhookRes.body).received, true);
+
+    // Verify downgrade to FREE
+    const downgradedSubRes = await app.inject({
+      method: 'GET',
+      url: '/v1/billing/subscription',
+      headers: { 'x-sender-public-id': userId },
+    });
+    const downgradedData = JSON.parse(downgradedSubRes.body);
+    assert.equal(downgradedData.tier, 'FREE');
+    assert.equal(downgradedData.status, 'canceled');
+
+    // 4. SECURITY INVARIANT: Canceled/downgraded account NEVER loses E2EE capability
+    // Can still link devices and send encrypted Double Ratchet envelopes
+    const newDevId = crypto.randomUUID();
+    const linkDevRes = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/devices/link',
+      headers: { 'x-sender-public-id': userId },
+      payload: {
+        publicId: userId,
+        device: {
+          deviceId: newDevId,
+          publicIdentityKey: Buffer.from('mock-new-device-id-key-32b-str--').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-new-device-prekey-32b-str--').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+    assert.equal(linkDevRes.statusCode, 201);
+
+    // 5. User cancels subscription endpoint
+    const cancelRes = await app.inject({
+      method: 'POST',
+      url: '/v1/billing/cancel',
+      headers: { 'x-sender-public-id': userId },
+    });
+    assert.equal(cancelRes.statusCode, 200);
+
+    // 6. Admin metrics include subscription counts
+    const adminLoginRes = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/login',
+      payload: {
+        username: 'opsadmin',
+        password: 'dev_admin_ops_secret_123',
+        mfaCode: '654321',
+      },
+    });
+    const { token: adminToken } = JSON.parse(adminLoginRes.body);
+
+    const metricsRes = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/metrics',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(metricsRes.statusCode, 200);
+    const metricsData = JSON.parse(metricsRes.body);
+    assert.ok(metricsData.subscriptions);
+    assert.ok(typeof metricsData.subscriptions.free === 'number');
+    assert.ok(typeof metricsData.subscriptions.pro === 'number');
+  });
 });

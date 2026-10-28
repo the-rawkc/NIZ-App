@@ -135,6 +135,7 @@ export const adminRoutes = (storage: IStorageAdapter): FastifyPluginAsync => {
       preHandler: [requireRole(['OPERATIONS_ADMIN', 'ANALYTICS_VIEWER', 'SUPER_ADMIN'])],
     }, async () => {
       const queueDepth = await storage.countQueuedMessages();
+      const subscriptionMetrics = await storage.getSubscriptionMetrics();
       return {
         status: 'healthy',
         uptimeSeconds: Math.floor(process.uptime()),
@@ -142,6 +143,7 @@ export const adminRoutes = (storage: IStorageAdapter): FastifyPluginAsync => {
         errorRateLastHour: 0.0,
         registeredAccountsEstimate: 10,
         retentionPolicy: '14-day store-and-forward queue TTL',
+        subscriptions: subscriptionMetrics,
       };
     });
 

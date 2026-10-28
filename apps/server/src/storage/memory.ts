@@ -11,6 +11,8 @@ import type {
   MessageEnvelope,
   AttachmentRecord,
   EncryptedBackupVault,
+  SubscriptionRecord,
+  SubscriptionMetrics,
 } from '@niz/shared-types';
 import type { IStorageAdapter } from './interface.js';
 
@@ -23,6 +25,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
   private messageQueue = new Map<string, MessageEnvelope>();
   private attachments = new Map<string, { record: AttachmentRecord; data: Buffer }>();
   private backupVaults = new Map<string, EncryptedBackupVault>();
+  private subscriptions = new Map<string, SubscriptionRecord>();
   private auditEvents: AdminAuditEvent[] = [];
   private featureFlags = new Map<string, FeatureFlag>([
     [
@@ -267,6 +270,9 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     // Purge encrypted backup vaults
     this.backupVaults.delete(publicId);
 
+    // Purge subscription record
+    this.subscriptions.delete(publicId);
+
     return true;
   }
 
@@ -357,5 +363,91 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     const vault = this.backupVaults.get(accountPublicId);
     if (!vault) return null;
     return { ...vault };
+  }
+
+  // Subscriptions & Billing (Phase 8)
+  async getSubscription(publicId: string): Promise<SubscriptionRecord> {
+    let sub = this.subscriptions.get(publicId);
+    if (!sub) {
+      sub = {
+        publicId,
+        tier: 'FREE',
+        status: 'free',
+        currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+        cancelAtPeriodEnd: false,
+        maxDevices: 3,
+        maxAttachmentSizeBytes: 25 * 1024 * 1024,
+        retentionDays: 14,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      this.subscriptions.set(publicId, sub);
+    }
+    return { ...sub };
+  }
+
+  async updateSubscription(
+    publicId: string,
+    update: Partial<SubscriptionRecord>
+  ): Promise<SubscriptionRecord> {
+    const existing = await this.getSubscription(publicId);
+    const tier = update.tier || existing.tier;
+
+    // Apply tier quotas
+    let maxDevices = 3;
+    let maxAttachmentSizeBytes = 25 * 1024 * 1024;
+    let retentionDays = 14;
+
+    if (tier === 'PRO') {
+      maxDevices = 10;
+      maxAttachmentSizeBytes = 100 * 1024 * 1024;
+      retentionDays = 30;
+    } else if (tier === 'BUSINESS') {
+      maxDevices = 100;
+      maxAttachmentSizeBytes = 500 * 1024 * 1024;
+      retentionDays = 90;
+    }
+
+    const updated: SubscriptionRecord = {
+      ...existing,
+      ...update,
+      tier,
+      maxDevices,
+      maxAttachmentSizeBytes,
+      retentionDays,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.subscriptions.set(publicId, updated);
+    return { ...updated };
+  }
+
+  async getSubscriptionMetrics(): Promise<SubscriptionMetrics> {
+    let free = 0;
+    let pro = 0;
+    let business = 0;
+
+    for (const sub of this.subscriptions.values()) {
+      if (sub.status === 'active' || sub.status === 'trialing') {
+        if (sub.tier === 'PRO') pro++;
+        else if (sub.tier === 'BUSINESS') business++;
+        else free++;
+      } else {
+        free++;
+      }
+    }
+
+    // Default accounts that have not created explicit sub records are free
+    const totalAccounts = this.accounts.size;
+    const explicitSubs = this.subscriptions.size;
+    const implicitFree = Math.max(0, totalAccounts - explicitSubs);
+    free += implicitFree;
+
+    return {
+      free,
+      pro,
+      business,
+      totalSubscribers: pro + business,
+    };
   }
 }
