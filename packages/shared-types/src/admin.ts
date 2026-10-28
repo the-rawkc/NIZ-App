@@ -39,3 +39,23 @@ export interface FeatureFlag {
   /** Invariant: Flags marked as critical security invariants can NEVER be disabled */
   isSecurityInvariant: boolean;
 }
+
+export interface AdminLoginRequest {
+  username: string;
+  passwordHash: string;
+  mfaCode: string;
+}
+
+export interface AdminLoginResponse {
+  token: string;
+  adminId: string;
+  username: string;
+  roles: AdminRole[];
+  expiresAt: string;
+}
+
+export interface UpdateFeatureFlagRequest {
+  key: string;
+  enabled: boolean;
+  rolloutPercentage?: number;
+}

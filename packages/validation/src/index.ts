@@ -73,6 +73,24 @@ export const ReportAbuseSchema = z.object({
 });
 
 /**
+ * Admin Authentication Schema
+ */
+export const AdminLoginSchema = z.object({
+  username: z.string().min(3).max(64),
+  password: z.string().min(8).max(128),
+  mfaCode: z.string().min(6).max(8),
+});
+
+/**
+ * Feature Flag Update Schema
+ */
+export const UpdateFeatureFlagSchema = z.object({
+  key: z.string().min(3).max(64),
+  enabled: z.boolean(),
+  rolloutPercentage: z.number().int().min(0).max(100).optional(),
+});
+
+/**
  * Message Envelope Schema
  * Verifies ciphertext envelope format; rejects empty ciphertexts.
  */

@@ -6,6 +6,8 @@ import type {
   ConnectionState,
   ContactSummary,
   ReportAbuseRecord,
+  FeatureFlag,
+  AdminAuditEvent,
   MessageEnvelope,
 } from '@niz/shared-types';
 
@@ -40,6 +42,16 @@ export interface IStorageAdapter {
 
   // Abuse Reports
   recordAbuseReport(report: ReportAbuseRecord): Promise<void>;
+
+  // Data Deletion
+  deleteAccount(publicId: string): Promise<boolean>;
+
+  // Feature Flags & Admin Audit
+  getFeatureFlag(key: string): Promise<FeatureFlag | null>;
+  listFeatureFlags(): Promise<FeatureFlag[]>;
+  updateFeatureFlag(key: string, enabled: boolean, rolloutPercentage?: number): Promise<boolean>;
+  recordAdminAuditEvent(event: AdminAuditEvent): Promise<void>;
+  listAdminAuditEvents(): Promise<AdminAuditEvent[]>;
 
   // Ciphertext Message Queue
   enqueueMessage(envelope: MessageEnvelope): Promise<void>;

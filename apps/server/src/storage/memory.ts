@@ -6,6 +6,8 @@ import type {
   ConnectionState,
   ContactSummary,
   ReportAbuseRecord,
+  FeatureFlag,
+  AdminAuditEvent,
   MessageEnvelope,
 } from '@niz/shared-types';
 import type { IStorageAdapter } from './interface.js';
@@ -17,6 +19,39 @@ export class MemoryStorageAdapter implements IStorageAdapter {
   private connectionRequests = new Map<string, ConnectionRequest>();
   private abuseReports: ReportAbuseRecord[] = [];
   private messageQueue = new Map<string, MessageEnvelope>();
+  private auditEvents: AdminAuditEvent[] = [];
+  private featureFlags = new Map<string, FeatureFlag>([
+    [
+      'enforce_e2ee',
+      {
+        key: 'enforce_e2ee',
+        enabled: true,
+        description: 'Enforce End-to-End Encryption on all messages',
+        rolloutPercentage: 100,
+        isSecurityInvariant: true,
+      },
+    ],
+    [
+      'enforce_contact_approval',
+      {
+        key: 'enforce_contact_approval',
+        enabled: true,
+        description: 'Require mutual approval before messaging by default',
+        rolloutPercentage: 100,
+        isSecurityInvariant: true,
+      },
+    ],
+    [
+      'experimental_voice_notes',
+      {
+        key: 'experimental_voice_notes',
+        enabled: false,
+        description: 'Opt-in preview of encrypted voice notes',
+        rolloutPercentage: 0,
+        isSecurityInvariant: false,
+      },
+    ],
+  ]);
 
   // Identity & Devices
   async createAccount(account: PublicIdentity): Promise<void> {
@@ -175,6 +210,75 @@ export class MemoryStorageAdapter implements IStorageAdapter {
 
   async recordAbuseReport(report: ReportAbuseRecord): Promise<void> {
     this.abuseReports.push({ ...report });
+  }
+
+  async deleteAccount(publicId: string): Promise<boolean> {
+    if (!this.accounts.has(publicId)) return false;
+
+    // Delete account
+    this.accounts.delete(publicId);
+
+    // Delete devices
+    for (const [devId, dev] of this.devices.entries()) {
+      if (dev.accountPublicId === publicId) {
+        this.devices.delete(devId);
+      }
+    }
+
+    // Invalidate invitations
+    for (const [invId, inv] of this.invitations.entries()) {
+      if (inv.creatorPublicId === publicId) {
+        this.invitations.delete(invId);
+      }
+    }
+
+    // Delete connections
+    for (const [reqId, req] of this.connectionRequests.entries()) {
+      if (req.senderPublicId === publicId || req.recipientPublicId === publicId) {
+        this.connectionRequests.delete(reqId);
+      }
+    }
+
+    // Purge queued messages
+    for (const [envId, env] of this.messageQueue.entries()) {
+      if (env.senderPublicId === publicId || env.recipientPublicId === publicId) {
+        this.messageQueue.delete(envId);
+      }
+    }
+
+    return true;
+  }
+
+  async getFeatureFlag(key: string): Promise<FeatureFlag | null> {
+    return this.featureFlags.get(key) || null;
+  }
+
+  async listFeatureFlags(): Promise<FeatureFlag[]> {
+    return Array.from(this.featureFlags.values());
+  }
+
+  async updateFeatureFlag(key: string, enabled: boolean, rolloutPercentage?: number): Promise<boolean> {
+    const flag = this.featureFlags.get(key);
+    if (!flag) return false;
+
+    // INVARIANT: Critical security invariants can NEVER be disabled
+    if (flag.isSecurityInvariant && !enabled) {
+      throw new Error(`SECURITY INVARIANT VIOLATION: Cannot disable core security invariant "${key}"`);
+    }
+
+    flag.enabled = enabled;
+    if (typeof rolloutPercentage === 'number') {
+      flag.rolloutPercentage = rolloutPercentage;
+    }
+    return true;
+  }
+
+  async recordAdminAuditEvent(event: AdminAuditEvent): Promise<void> {
+    this.auditEvents.push({ ...event });
+  }
+
+  async listAdminAuditEvents(): Promise<AdminAuditEvent[]> {
+    return [...this.auditEvents];
   }
 
   // Ciphertext Message Queue

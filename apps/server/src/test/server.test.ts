@@ -633,4 +633,142 @@ describe('NIZ Chat Server & Security Invariants', () => {
 
     ws.close();
   });
+
+  it('Phase 5: Admin login with mandatory MFA and RBAC privilege separation', async () => {
+    // 1. Login with invalid password
+    const badPass = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/login',
+      payload: { username: 'opsadmin', password: 'wrongpassword', mfaCode: '123456' },
+    });
+    assert.equal(badPass.statusCode, 401);
+
+    // 2. Login with invalid MFA code format (< 6 chars rejected by validation schema)
+    const badMfa = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/login',
+      payload: { username: 'opsadmin', password: 'dev_admin_ops_secret_123', mfaCode: '123' },
+    });
+    assert.equal(badMfa.statusCode, 400);
+
+    // 3. Login with valid credentials and valid 6-digit MFA
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/login',
+      payload: { username: 'opsadmin', password: 'dev_admin_ops_secret_123', mfaCode: '654321' },
+    });
+    assert.equal(loginRes.statusCode, 200);
+    const { token: opsToken } = JSON.parse(loginRes.body);
+    assert.ok(opsToken);
+
+    // 4. Operations Admin can access aggregate metrics
+    const metricsRes = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/metrics',
+      headers: { authorization: `Bearer ${opsToken}` },
+    });
+    assert.equal(metricsRes.statusCode, 200);
+    assert.equal(JSON.parse(metricsRes.body).status, 'healthy');
+
+    // 5. Operations Admin CANNOT access audit logs (Requires SECURITY_AUDITOR or SUPER_ADMIN)
+    const forbiddenAudit = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/audit-logs',
+      headers: { authorization: `Bearer ${opsToken}` },
+    });
+    assert.equal(forbiddenAudit.statusCode, 403);
+
+    // 6. Security Auditor logs in with MFA
+    const auditorLogin = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/login',
+      payload: { username: 'auditor', password: 'dev_admin_auditor_secret_123', mfaCode: '112233' },
+    });
+    const { token: auditorToken } = JSON.parse(auditorLogin.body);
+
+    // Auditor can access audit logs
+    const auditRes = await app.inject({
+      method: 'GET',
+      url: '/v1/admin/audit-logs',
+      headers: { authorization: `Bearer ${auditorToken}` },
+    });
+    assert.equal(auditRes.statusCode, 200);
+    assert.ok(Array.isArray(JSON.parse(auditRes.body).auditLogs));
+  });
+
+  it('Phase 5 SECURITY INVARIANT: Feature flags cannot disable core security invariants', async () => {
+    // Product Admin logs in
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/login',
+      payload: { username: 'productadmin', password: 'dev_admin_product_secret_123', mfaCode: '998877' },
+    });
+    const { token: prodToken } = JSON.parse(loginRes.body);
+
+    // 1. Attempt to disable E2EE -> Must fail closed with 400 Bad Request!
+    const disableE2eeRes = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/feature-flags',
+      headers: { authorization: `Bearer ${prodToken}` },
+      payload: { key: 'enforce_e2ee', enabled: false },
+    });
+    assert.equal(disableE2eeRes.statusCode, 400);
+    assert.equal(JSON.parse(disableE2eeRes.body).error, 'SECURITY_INVARIANT_VIOLATION');
+
+    // 2. Attempt to disable contact approval requirement -> Must fail closed with 400!
+    const disableApprovalRes = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/feature-flags',
+      headers: { authorization: `Bearer ${prodToken}` },
+      payload: { key: 'enforce_contact_approval', enabled: false },
+    });
+    assert.equal(disableApprovalRes.statusCode, 400);
+    assert.equal(JSON.parse(disableApprovalRes.body).error, 'SECURITY_INVARIANT_VIOLATION');
+
+    // 3. Toggling a normal non-security experiment flag -> Succeeds
+    const normalFlagRes = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/feature-flags',
+      headers: { authorization: `Bearer ${prodToken}` },
+      payload: { key: 'experimental_voice_notes', enabled: true, rolloutPercentage: 25 },
+    });
+    assert.equal(normalFlagRes.statusCode, 200);
+    assert.equal(JSON.parse(normalFlagRes.body).enabled, true);
+  });
+
+  it('Phase 5: User account closure permanently purges server records (FR-020)', async () => {
+    const userToClose = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const devId = crypto.randomUUID();
+
+    // Register user
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: userToClose,
+        device: {
+          deviceId: devId,
+          publicIdentityKey: Buffer.from('mock-to-close-identity-key-32b').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-to-close-prekey-32b-long-').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // Close account
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: `/v1/identity/${userToClose}`,
+      headers: { 'x-sender-public-id': userToClose },
+    });
+    assert.equal(deleteRes.statusCode, 200);
+    assert.equal(JSON.parse(deleteRes.body).purged, true);
+
+    // Verify devices list is now empty
+    const devicesRes = await app.inject({
+      method: 'GET',
+      url: `/v1/identity/${userToClose}/devices`,
+    });
+    assert.equal(JSON.parse(devicesRes.body).devices.length, 0);
+  });
 });

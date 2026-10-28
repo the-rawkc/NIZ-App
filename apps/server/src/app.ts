@@ -9,6 +9,7 @@ import { identityRoutes } from './routes/identity.js';
 import { invitationRoutes } from './routes/invitations.js';
 import { connectionRoutes } from './routes/connections.js';
 import { messageRoutes } from './routes/messages.js';
+import { adminRoutes } from './routes/admin.js';
 import { logger } from './utils/logger.js';
 
 export interface AppOptions {
@@ -90,6 +91,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(invitationRoutes(opts.storage));
   await app.register(connectionRoutes(opts.storage));
   await app.register(messageRoutes(opts.storage, activeSockets));
+  await app.register(adminRoutes(opts.storage));
 
   return app;
 }

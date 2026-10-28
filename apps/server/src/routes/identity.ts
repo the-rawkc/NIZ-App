@@ -64,5 +64,29 @@ export const identityRoutes = (storage: IStorageAdapter): FastifyPluginAsync => 
       const devices = await storage.listDevices(publicId);
       return reply.send({ publicId, devices });
     });
+
+    // Account Closure & Permanent Data Deletion (FR-020)
+    fastify.delete<{ Params: { publicId: string } }>('/v1/identity/:publicId', async (request, reply) => {
+      const { publicId } = request.params;
+      const caller = request.headers['x-sender-public-id'] as string;
+
+      if (!caller || caller !== publicId) {
+        return reply.status(401).send({ error: 'UNAUTHORIZED_ACCOUNT_CLOSURE' });
+      }
+
+      const deleted = await storage.deleteAccount(publicId);
+      if (!deleted) {
+        return reply.status(404).send({ error: 'ACCOUNT_NOT_FOUND' });
+      }
+
+      logger.info('Account closed and all associated server data purged', { senderPublicId: publicId });
+
+      return reply.send({
+        success: true,
+        deletedPublicId: publicId,
+        purged: true,
+        timestamp: new Date().toISOString(),
+      });
+    });
   };
 };
