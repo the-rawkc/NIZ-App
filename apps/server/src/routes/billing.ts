@@ -6,6 +6,7 @@ import type {
   BillingWebhookPayload,
   SubscriptionTier,
 } from '@niz/shared-types';
+import { assertNoSecretsInPayload } from '@niz/validation';
 import { logger } from '../utils/logger.js';
 
 export function billingRoutes(storage: IStorageAdapter): FastifyPluginAsync {
@@ -27,6 +28,13 @@ export function billingRoutes(storage: IStorageAdapter): FastifyPluginAsync {
     fastify.post<{ Body: { tier?: SubscriptionTier } }>(
       '/v1/billing/checkout',
       async (req, reply) => {
+        try {
+          assertNoSecretsInPayload(req.body);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Forbidden field';
+          return reply.status(400).send({ error: 'BAD_REQUEST', message: msg });
+        }
+
         const caller = req.headers['x-sender-public-id'] as string | undefined;
         if (!caller) {
           return reply.status(401).send({ error: 'UNAUTHORIZED' });
