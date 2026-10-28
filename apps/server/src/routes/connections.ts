@@ -3,6 +3,8 @@ import crypto from 'node:crypto';
 import {
   SendConnectionRequestSchema,
   ConnectionDecisionSchema,
+  BlockContactSchema,
+  ReportAbuseSchema,
   assertNoSecretsInPayload,
 } from '@niz/validation';
 import type { IStorageAdapter } from '../storage/interface.js';
@@ -122,6 +124,108 @@ export const connectionRoutes = (storage: IStorageAdapter): FastifyPluginAsync =
       const { publicId } = request.params;
       const requests = await storage.listIncomingRequests(publicId);
       return reply.send({ requests });
+    });
+
+    // List all contacts for user
+    fastify.get<{ Params: { publicId: string } }>('/v1/contacts/:publicId', async (request, reply) => {
+      const { publicId } = request.params;
+      const contacts = await storage.listContacts(publicId);
+      return reply.send({ contacts });
+    });
+
+    // Block contact
+    fastify.post('/v1/contacts/block', async (request, reply) => {
+      const callerPublicId = request.headers['x-sender-public-id'] as string;
+      if (!callerPublicId) {
+        return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      }
+
+      const parseResult = BlockContactSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({ error: 'VALIDATION_ERROR', details: parseResult.error.format() });
+      }
+
+      const { targetPublicId } = parseResult.data;
+      await storage.setContactState(callerPublicId, targetPublicId, 'blocked');
+      logger.info('Contact blocked', { senderPublicId: callerPublicId, recipientPublicId: targetPublicId });
+
+      return reply.send({ success: true, targetPublicId, state: 'blocked' });
+    });
+
+    // Unblock contact
+    fastify.post('/v1/contacts/unblock', async (request, reply) => {
+      const callerPublicId = request.headers['x-sender-public-id'] as string;
+      if (!callerPublicId) {
+        return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      }
+
+      const parseResult = BlockContactSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({ error: 'VALIDATION_ERROR', details: parseResult.error.format() });
+      }
+
+      const { targetPublicId } = parseResult.data;
+      await storage.setContactState(callerPublicId, targetPublicId, 'approved');
+      logger.info('Contact unblocked', { senderPublicId: callerPublicId, recipientPublicId: targetPublicId });
+
+      return reply.send({ success: true, targetPublicId, state: 'approved' });
+    });
+
+    // Remove contact relationship
+    fastify.delete<{ Params: { targetPublicId: string } }>('/v1/contacts/:targetPublicId', async (request, reply) => {
+      const callerPublicId = request.headers['x-sender-public-id'] as string;
+      if (!callerPublicId) {
+        return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      }
+
+      const { targetPublicId } = request.params;
+      const removed = await storage.removeContact(callerPublicId, targetPublicId);
+      logger.info('Contact removed', { senderPublicId: callerPublicId, recipientPublicId: targetPublicId, removed });
+
+      return reply.send({ success: true, removed });
+    });
+
+    // Report abuse (strictly metadata, no plaintext messages)
+    fastify.post('/v1/reports', async (request, reply) => {
+      try {
+        assertNoSecretsInPayload(request.body);
+      } catch (err: unknown) {
+        return reply.status(400).send({
+          error: 'BAD_REQUEST',
+          message: err instanceof Error ? err.message : 'Forbidden field',
+        });
+      }
+
+      const callerPublicId = request.headers['x-sender-public-id'] as string;
+      if (!callerPublicId) {
+        return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      }
+
+      const parseResult = ReportAbuseSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({ error: 'VALIDATION_ERROR', details: parseResult.error.format() });
+      }
+
+      const { reportedPublicId, category, reason } = parseResult.data;
+      const reportId = crypto.randomUUID();
+
+      await storage.recordAbuseReport({
+        reportId,
+        reporterPublicId: callerPublicId,
+        reportedPublicId,
+        category,
+        reason,
+        createdAt: new Date().toISOString(),
+      });
+
+      logger.info('Abuse report submitted', {
+        reportId,
+        senderPublicId: callerPublicId,
+        recipientPublicId: reportedPublicId,
+        category,
+      });
+
+      return reply.status(201).send({ success: true, reportId });
     });
   };
 };

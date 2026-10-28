@@ -3,6 +3,9 @@ import type {
   PublicDevice,
   InvitationRecord,
   ConnectionRequest,
+  ConnectionState,
+  ContactSummary,
+  ReportAbuseRecord,
   MessageEnvelope,
 } from '@niz/shared-types';
 
@@ -21,16 +24,22 @@ export interface IStorageAdapter {
   markInvitationRedeemed(id: string): Promise<boolean>;
   revokeInvitation(id: string, creatorPublicId: string): Promise<boolean>;
 
-  // Connection Requests
+  // Connection Requests & Contacts
   createConnectionRequest(request: ConnectionRequest): Promise<void>;
   getConnectionRequest(id: string): Promise<ConnectionRequest | null>;
   updateConnectionState(
     id: string,
-    state: ConnectionRequest['state'],
+    state: ConnectionState,
     recipientPublicId: string
   ): Promise<boolean>;
   listIncomingRequests(recipientPublicId: string): Promise<ConnectionRequest[]>;
+  listContacts(userPublicId: string): Promise<ContactSummary[]>;
+  setContactState(userA: string, userB: string, state: ConnectionState): Promise<boolean>;
+  removeContact(userA: string, userB: string): Promise<boolean>;
   areConnected(userA: string, userB: string): Promise<boolean>;
+
+  // Abuse Reports
+  recordAbuseReport(report: ReportAbuseRecord): Promise<void>;
 
   // Ciphertext Message Queue
   enqueueMessage(envelope: MessageEnvelope): Promise<void>;

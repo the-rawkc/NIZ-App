@@ -377,4 +377,157 @@ describe('NIZ Chat Server & Security Invariants', () => {
     });
     assert.equal(JSON.parse(emptyQueueRes.body).envelopes.length, 0);
   });
+
+  it('Phase 3: Contact lifecycle, blocking, unblocking, removal, and abuse reporting', async () => {
+    const userA = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const userB = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const devA = crypto.randomUUID();
+    const devB = crypto.randomUUID();
+
+    // Register User A
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: userA,
+        device: {
+          deviceId: devA,
+          publicIdentityKey: Buffer.from('mock-userA-identity-key-32-bytes').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-userA-prekey-32-bytes-long').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // Register User B
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: userB,
+        device: {
+          deviceId: devB,
+          publicIdentityKey: Buffer.from('mock-userB-identity-key-32-bytes').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-userB-prekey-32-bytes-long').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // A requests B
+    const reqRes = await app.inject({
+      method: 'POST',
+      url: '/v1/connection-requests',
+      headers: { 'x-sender-public-id': userA },
+      payload: { recipientPublicId: userB },
+    });
+    const { requestId } = JSON.parse(reqRes.body);
+
+    // B approves A
+    await app.inject({
+      method: 'POST',
+      url: '/v1/connection-requests/decision',
+      headers: { 'x-recipient-public-id': userB },
+      payload: { requestId, decision: 'approve' },
+    });
+
+    // Check contact list for user A
+    const listA = await app.inject({
+      method: 'GET',
+      url: `/v1/contacts/${userA}`,
+    });
+    assert.equal(listA.statusCode, 200);
+    const contactsA = JSON.parse(listA.body).contacts;
+    assert.equal(contactsA.length, 1);
+    assert.equal(contactsA[0].counterpartPublicId, userB);
+    assert.equal(contactsA[0].state, 'approved');
+
+    // B blocks A
+    const blockRes = await app.inject({
+      method: 'POST',
+      url: '/v1/contacts/block',
+      headers: { 'x-sender-public-id': userB },
+      payload: { targetPublicId: userA },
+    });
+    assert.equal(blockRes.statusCode, 200);
+
+    // A tries to message B while blocked -> MUST fail with 403 Forbidden!
+    const blockedMsgRes = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        envelopeId: crypto.randomUUID(),
+        senderPublicId: userA,
+        senderDeviceId: devA,
+        recipientPublicId: userB,
+        recipientDeviceId: devB,
+        ratchetHeader: {
+          dhPublicKey: Buffer.from('ratchet-ephemeral-dh-key-32-bytes').toString('base64'),
+          pn: 0,
+          n: 0,
+        },
+        ciphertext: Buffer.from('opaque-encrypted-ciphertext-bytes').toString('base64'),
+        nonce: Buffer.from('12-byte-nonce-here').toString('base64'),
+        protocolVersion: 'niz-dr-v1',
+        createdAt: new Date().toISOString(),
+      },
+    });
+    assert.equal(blockedMsgRes.statusCode, 403);
+
+    // B unblocks A
+    const unblockRes = await app.inject({
+      method: 'POST',
+      url: '/v1/contacts/unblock',
+      headers: { 'x-sender-public-id': userB },
+      payload: { targetPublicId: userA },
+    });
+    assert.equal(unblockRes.statusCode, 200);
+    assert.equal(JSON.parse(unblockRes.body).state, 'approved');
+
+    // A reports B for spam
+    const reportRes = await app.inject({
+      method: 'POST',
+      url: '/v1/reports',
+      headers: { 'x-sender-public-id': userA },
+      payload: {
+        reportedPublicId: userB,
+        category: 'spam',
+        reason: 'Unsolicited promotional requests',
+      },
+    });
+    assert.equal(reportRes.statusCode, 201);
+    assert.ok(JSON.parse(reportRes.body).reportId);
+
+    // B removes contact A
+    const removeRes = await app.inject({
+      method: 'DELETE',
+      url: `/v1/contacts/${userA}`,
+      headers: { 'x-sender-public-id': userB },
+    });
+    assert.equal(removeRes.statusCode, 200);
+    assert.equal(JSON.parse(removeRes.body).removed, true);
+
+    // After removal, messaging must be rejected with 403 Forbidden!
+    const postRemovalMsgRes = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        envelopeId: crypto.randomUUID(),
+        senderPublicId: userA,
+        senderDeviceId: devA,
+        recipientPublicId: userB,
+        recipientDeviceId: devB,
+        ratchetHeader: {
+          dhPublicKey: Buffer.from('ratchet-ephemeral-dh-key-32-bytes').toString('base64'),
+          pn: 0,
+          n: 0,
+        },
+        ciphertext: Buffer.from('opaque-encrypted-ciphertext-bytes').toString('base64'),
+        nonce: Buffer.from('12-byte-nonce-here').toString('base64'),
+        protocolVersion: 'niz-dr-v1',
+        createdAt: new Date().toISOString(),
+      },
+    });
+    assert.equal(postRemovalMsgRes.statusCode, 403);
+  });
 });

@@ -36,3 +36,28 @@ export interface ConnectionRelationship {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface ContactSummary {
+  id: string;
+  counterpartPublicId: string;
+  state: ConnectionState;
+  counterpartIdentityKey?: string;
+  safetyNumberFingerprint?: string;
+  isVerified?: boolean;
+  updatedAt: string;
+}
+
+export interface ReportAbusePayload {
+  reportedPublicId: string;
+  category: 'spam' | 'harassment' | 'impersonation' | 'other';
+  reason?: string;
+}
+
+export interface ReportAbuseRecord {
+  reportId: string;
+  reporterPublicId: string;
+  reportedPublicId: string;
+  category: string;
+  reason?: string;
+  createdAt: string;
+}

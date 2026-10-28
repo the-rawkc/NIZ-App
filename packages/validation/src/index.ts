@@ -57,6 +57,22 @@ export const ConnectionDecisionSchema = z.object({
 });
 
 /**
+ * Block / Unblock Contact Schema
+ */
+export const BlockContactSchema = z.object({
+  targetPublicId: PublicIdSchema,
+});
+
+/**
+ * Report Abuse Schema (Strictly Metadata, No Message Content)
+ */
+export const ReportAbuseSchema = z.object({
+  reportedPublicId: PublicIdSchema,
+  category: z.enum(['spam', 'harassment', 'impersonation', 'other']),
+  reason: z.string().max(500).optional(),
+});
+
+/**
  * Message Envelope Schema
  * Verifies ciphertext envelope format; rejects empty ciphertexts.
  */

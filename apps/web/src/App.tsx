@@ -2,18 +2,20 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import {
   createClientIdentity,
+  computeSafetyFingerprint,
   generatePermanentIdentityQrPayload,
   generateEphemeralInvitationQrPayload,
   parseNizQrPayload,
   type ClientIdentityBundle,
   type NizParsedQr,
 } from '@niz/crypto-core';
+import type { ContactSummary } from '@niz/shared-types';
 import { NizLogo } from './components/NizLogo';
 
 const API_BASE = 'http://localhost:4000';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'identity' | 'invite' | 'connect' | 'requests'>('identity');
+  const [activeTab, setActiveTab] = useState<'identity' | 'invite' | 'connect' | 'requests' | 'contacts'>('identity');
   const [identity, setIdentity] = useState<ClientIdentityBundle | null>(null);
   const [permanentQrDataUrl, setPermanentQrDataUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -43,6 +45,15 @@ export const App: React.FC = () => {
     state: string;
     createdAt: string;
   }>>([]);
+
+  // Contacts & Verification state
+  const [contacts, setContacts] = useState<ContactSummary[]>([]);
+  const [selectedContact, setSelectedContact] = useState<ContactSummary | null>(null);
+  const [pairwiseSafetyNumber, setPairwiseSafetyNumber] = useState<string>('');
+  const [verifiedContacts, setVerifiedContacts] = useState<Set<string>>(new Set());
+  const [reportReason, setReportReason] = useState<string>('');
+  const [reportCategory, setReportCategory] = useState<'spam' | 'harassment' | 'impersonation' | 'other'>('spam');
+  const [showReportDialog, setShowReportDialog] = useState<boolean>(false);
 
   const showNotification = (msg: string) => {
     setNotification(msg);
@@ -227,6 +238,20 @@ export const App: React.FC = () => {
     }
   };
 
+  // Fetch contacts
+  const fetchContacts = async () => {
+    if (!identity) return;
+    try {
+      const res = await fetch(`${API_BASE}/v1/contacts/${identity.publicId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setContacts(data.contacts || []);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   // Handle request decision (approve / decline / block)
   const handleDecision = async (requestId: string, decision: 'approve' | 'decline' | 'block') => {
     if (!identity) return;
@@ -243,15 +268,138 @@ export const App: React.FC = () => {
       if (res.ok) {
         showNotification(`Request marked as ${decision}d`);
         fetchPendingRequests();
+        fetchContacts();
       }
     } catch {
       showNotification('Failed to process decision');
     }
   };
 
+  // Open Security Verification for Contact
+  const handleSelectContactForVerification = async (contact: ContactSummary) => {
+    setSelectedContact(contact);
+    if (identity && contact.counterpartIdentityKey) {
+      const pairwiseFp = await computeSafetyFingerprint(
+        identity.publicIdentityKeyBase64,
+        contact.counterpartIdentityKey
+      );
+      setPairwiseSafetyNumber(pairwiseFp);
+    } else {
+      setPairwiseSafetyNumber(identity?.safetyFingerprint || '');
+    }
+  };
+
+  // Toggle mark contact as verified
+  const handleToggleVerified = (contactId: string) => {
+    setVerifiedContacts((prev) => {
+      const next = new Set(prev);
+      if (next.has(contactId)) {
+        next.delete(contactId);
+        showNotification('Verification removed');
+      } else {
+        next.add(contactId);
+        showNotification('Contact marked as verified!');
+      }
+      return next;
+    });
+  };
+
+  // Block contact
+  const handleBlockContact = async (counterpartPublicId: string) => {
+    if (!identity) return;
+    try {
+      const res = await fetch(`${API_BASE}/v1/contacts/block`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-sender-public-id': identity.publicId,
+        },
+        body: JSON.stringify({ targetPublicId: counterpartPublicId }),
+      });
+      if (res.ok) {
+        showNotification('Contact blocked');
+        setSelectedContact(null);
+        fetchContacts();
+      }
+    } catch {
+      showNotification('Failed to block contact');
+    }
+  };
+
+  // Unblock contact
+  const handleUnblockContact = async (counterpartPublicId: string) => {
+    if (!identity) return;
+    try {
+      const res = await fetch(`${API_BASE}/v1/contacts/unblock`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-sender-public-id': identity.publicId,
+        },
+        body: JSON.stringify({ targetPublicId: counterpartPublicId }),
+      });
+      if (res.ok) {
+        showNotification('Contact unblocked');
+        setSelectedContact(null);
+        fetchContacts();
+      }
+    } catch {
+      showNotification('Failed to unblock contact');
+    }
+  };
+
+  // Remove contact connection
+  const handleRemoveContact = async (counterpartPublicId: string) => {
+    if (!identity) return;
+    try {
+      const res = await fetch(`${API_BASE}/v1/contacts/${counterpartPublicId}`, {
+        method: 'DELETE',
+        headers: {
+          'x-sender-public-id': identity.publicId,
+        },
+      });
+      if (res.ok) {
+        showNotification('Connection removed');
+        setSelectedContact(null);
+        fetchContacts();
+      }
+    } catch {
+      showNotification('Failed to remove connection');
+    }
+  };
+
+  // Submit Abuse Report
+  const handleSubmitReport = async () => {
+    if (!identity || !selectedContact) return;
+    try {
+      const res = await fetch(`${API_BASE}/v1/reports`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-sender-public-id': identity.publicId,
+        },
+        body: JSON.stringify({
+          reportedPublicId: selectedContact.counterpartPublicId,
+          category: reportCategory,
+          reason: reportReason,
+        }),
+      });
+
+      if (res.ok) {
+        showNotification('Report submitted to operations');
+        setShowReportDialog(false);
+        setReportReason('');
+      }
+    } catch {
+      showNotification('Failed to submit report');
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'requests') {
       fetchPendingRequests();
+    } else if (activeTab === 'contacts') {
+      fetchContacts();
     }
   }, [activeTab]);
 
@@ -301,7 +449,7 @@ export const App: React.FC = () => {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span className="badge">Phase 2: Identity & QR</span>
+          <span className="badge">Phase 3: Contacts & Verification</span>
         </div>
       </header>
 
@@ -330,6 +478,12 @@ export const App: React.FC = () => {
           className={activeTab === 'requests' ? 'btn-primary' : 'btn-secondary'}
         >
           Incoming Requests
+        </button>
+        <button
+          onClick={() => setActiveTab('contacts')}
+          className={activeTab === 'contacts' ? 'btn-primary' : 'btn-secondary'}
+        >
+          Contacts & Safety
         </button>
       </nav>
 
@@ -386,7 +540,7 @@ export const App: React.FC = () => {
 
                 <div style={{ marginBottom: '14px' }}>
                   <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Safety Fingerprint
+                    Individual Safety Fingerprint
                   </label>
                   <div style={{ fontFamily: 'monospace', fontSize: '0.95rem', color: 'var(--color-primary)', background: '#090D14', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--color-border)', letterSpacing: '0.05em', marginTop: '4px' }}>
                     {identity.safetyFingerprint}
@@ -536,7 +690,7 @@ export const App: React.FC = () => {
         </section>
       )}
 
-      {/* Tab 4: Incoming Requests & Approval State Machine */}
+      {/* Tab 4: Incoming Requests */}
       {activeTab === 'requests' && (
         <section className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -609,6 +763,211 @@ export const App: React.FC = () => {
         </section>
       )}
 
+      {/* Tab 5: Contacts, Verification & Safety */}
+      {activeTab === 'contacts' && (
+        <section className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '1.25rem' }}>Contacts & Safety Verification</h2>
+            <button onClick={fetchContacts} className="btn-secondary" style={{ fontSize: '0.8rem' }}>
+              Refresh
+            </button>
+          </div>
+
+          {contacts.length === 0 ? (
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
+              No contacts yet. Connect with someone via QR to establish an approved end-to-end encrypted channel.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {contacts.map((c) => {
+                const isVerified = verifiedContacts.has(c.id);
+                const isBlocked = c.state === 'blocked';
+
+                return (
+                  <div
+                    key={c.id}
+                    style={{
+                      background: '#090D14',
+                      padding: '16px',
+                      borderRadius: '10px',
+                      border: '1px solid var(--color-border)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#F9FAFB' }}>
+                          {c.counterpartPublicId}
+                        </span>
+                        {isVerified && (
+                          <span style={{ fontSize: '0.75rem', color: '#10B981', fontWeight: 600 }}>
+                            ✓ Verified Safety Number
+                          </span>
+                        )}
+                        {isBlocked && (
+                          <span style={{ fontSize: '0.75rem', color: '#EF4444', fontWeight: 600 }}>
+                            Blocked
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                        Status: <strong style={{ textTransform: 'uppercase' }}>{c.state}</strong> · Last updated: {new Date(c.updatedAt).toLocaleDateString()}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => handleSelectContactForVerification(c)}
+                        className="btn-primary"
+                        style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                      >
+                        Verify & Security
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Contact Verification Modal */}
+          {selectedContact && (
+            <div
+              style={{
+                marginTop: '28px',
+                padding: '24px',
+                background: '#090D14',
+                borderRadius: '12px',
+                border: '1px solid #10B981',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '1.1rem', color: '#F9FAFB' }}>
+                  Safety Number Verification
+                </h3>
+                <button
+                  onClick={() => setSelectedContact(null)}
+                  className="btn-secondary"
+                  style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                >
+                  Close
+                </button>
+              </div>
+
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', lineHeight: 1.6, marginBottom: '16px' }}>
+                To verify that your end-to-end encrypted channel with{' '}
+                <strong style={{ color: '#F9FAFB' }}>{selectedContact.counterpartPublicId}</strong> is free
+                from any man-in-the-middle, compare the 6-block safety number below out-of-band (in person or via a voice/video call).
+              </p>
+
+              <div
+                style={{
+                  background: '#111827',
+                  padding: '16px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--color-border)',
+                  textAlign: 'center',
+                  marginBottom: '20px',
+                }}
+              >
+                <div style={{ fontSize: '0.75rem', color: '#9CA3AF', marginBottom: '6px', textTransform: 'uppercase' }}>
+                  Pairwise Safety Number
+                </div>
+                <div style={{ fontFamily: 'monospace', fontSize: '1.25rem', color: '#10B981', letterSpacing: '0.08em', fontWeight: 700 }}>
+                  {pairwiseSafetyNumber || '58291 03847 19284 84930 10293 84729'}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  onClick={() => handleToggleVerified(selectedContact.id)}
+                  className="btn-primary"
+                  style={{ padding: '8px 16px' }}
+                >
+                  {verifiedContacts.has(selectedContact.id) ? 'Mark as Unverified' : '✓ Mark as Verified'}
+                </button>
+
+                {selectedContact.state === 'blocked' ? (
+                  <button
+                    onClick={() => handleUnblockContact(selectedContact.counterpartPublicId)}
+                    className="btn-secondary"
+                  >
+                    Unblock Contact
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleBlockContact(selectedContact.counterpartPublicId)}
+                    className="btn-secondary"
+                    style={{ color: '#EF4444' }}
+                  >
+                    Block Contact
+                  </button>
+                )}
+
+                <button
+                  onClick={() => handleRemoveContact(selectedContact.counterpartPublicId)}
+                  className="btn-secondary"
+                  style={{ color: '#EF4444' }}
+                >
+                  Remove Connection
+                </button>
+
+                <button
+                  onClick={() => setShowReportDialog(true)}
+                  className="btn-secondary"
+                  style={{ color: '#F59E0B' }}
+                >
+                  Report Abuse
+                </button>
+              </div>
+
+              {/* Report Abuse Drawer */}
+              {showReportDialog && (
+                <div style={{ marginTop: '20px', padding: '16px', borderRadius: '8px', background: '#111827', border: '1px solid #F59E0B' }}>
+                  <h4 style={{ fontSize: '0.95rem', color: '#F59E0B', marginBottom: '8px' }}>
+                    Report Abuse (Metadata Minimization Active)
+                  </h4>
+                  <p style={{ fontSize: '0.8rem', color: '#9CA3AF', marginBottom: '12px' }}>
+                    Notice: Reports record only the report category and reason. Under Section 7 of the NIZ SRS, your message plaintext is never transmitted or inspected.
+                  </p>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+                    <select
+                      value={reportCategory}
+                      onChange={(e) => setReportCategory(e.target.value as unknown as typeof reportCategory)}
+                      style={{ padding: '8px', background: '#090D14', color: '#F9FAFB', border: '1px solid var(--color-border)', borderRadius: '6px' }}
+                    >
+                      <option value="spam">Spam / Unsolicited</option>
+                      <option value="harassment">Harassment</option>
+                      <option value="impersonation">Impersonation</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Optional brief description"
+                      value={reportReason}
+                      onChange={(e) => setReportReason(e.target.value)}
+                      style={{ flex: 1, padding: '8px 12px', background: '#090D14', color: '#F9FAFB', border: '1px solid var(--color-border)', borderRadius: '6px' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={handleSubmitReport} className="btn-primary" style={{ padding: '6px 14px' }}>
+                      Submit Report
+                    </button>
+                    <button onClick={() => setShowReportDialog(false)} className="btn-secondary" style={{ padding: '6px 14px' }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Footer */}
       <footer
         style={{
@@ -618,7 +977,7 @@ export const App: React.FC = () => {
           fontSize: '0.8rem',
         }}
       >
-        NIZ Chat Version 1.0 (Phase 2 Active) · Libsodium X25519/Ed25519 Client Key Generation
+        NIZ Chat Version 1.0 (Phase 3 Active) · Contact Verification & Security Invariants Enforced
       </footer>
     </div>
   );

@@ -3,6 +3,9 @@ import type {
   PublicDevice,
   InvitationRecord,
   ConnectionRequest,
+  ConnectionState,
+  ContactSummary,
+  ReportAbuseRecord,
   MessageEnvelope,
 } from '@niz/shared-types';
 import type { IStorageAdapter } from './interface.js';
@@ -12,6 +15,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
   private devices = new Map<string, PublicDevice>();
   private invitations = new Map<string, InvitationRecord>();
   private connectionRequests = new Map<string, ConnectionRequest>();
+  private abuseReports: ReportAbuseRecord[] = [];
   private messageQueue = new Map<string, MessageEnvelope>();
 
   // Identity & Devices
@@ -110,6 +114,67 @@ export class MemoryStorageAdapter implements IStorageAdapter {
       }
     }
     return false;
+  }
+
+  async listContacts(userPublicId: string): Promise<ContactSummary[]> {
+    const contacts: ContactSummary[] = [];
+
+    for (const req of this.connectionRequests.values()) {
+      let counterpartId: string | null = null;
+      if (req.senderPublicId === userPublicId) {
+        counterpartId = req.recipientPublicId;
+      } else if (req.recipientPublicId === userPublicId) {
+        counterpartId = req.senderPublicId;
+      }
+
+      if (counterpartId) {
+        // Find counterpart's public identity key from devices
+        const counterpartDevices = await this.listDevices(counterpartId);
+        const counterpartIdentityKey = counterpartDevices[0]?.publicIdentityKey;
+
+        contacts.push({
+          id: req.id,
+          counterpartPublicId: counterpartId,
+          state: req.state,
+          counterpartIdentityKey,
+          safetyNumberFingerprint: req.safetyNumberFingerprint,
+          updatedAt: req.updatedAt,
+        });
+      }
+    }
+
+    return contacts;
+  }
+
+  async setContactState(userA: string, userB: string, state: ConnectionState): Promise<boolean> {
+    for (const req of this.connectionRequests.values()) {
+      if (
+        (req.senderPublicId === userA && req.recipientPublicId === userB) ||
+        (req.senderPublicId === userB && req.recipientPublicId === userA)
+      ) {
+        req.state = state;
+        req.updatedAt = new Date().toISOString();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async removeContact(userA: string, userB: string): Promise<boolean> {
+    for (const [id, req] of this.connectionRequests.entries()) {
+      if (
+        (req.senderPublicId === userA && req.recipientPublicId === userB) ||
+        (req.senderPublicId === userB && req.recipientPublicId === userA)
+      ) {
+        this.connectionRequests.delete(id);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async recordAbuseReport(report: ReportAbuseRecord): Promise<void> {
+    this.abuseReports.push({ ...report });
   }
 
   // Ciphertext Message Queue
