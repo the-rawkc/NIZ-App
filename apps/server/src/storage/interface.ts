@@ -1,0 +1,40 @@
+import type {
+  PublicIdentity,
+  PublicDevice,
+  InvitationRecord,
+  ConnectionRequest,
+  MessageEnvelope,
+} from '@niz/shared-types';
+
+export interface IStorageAdapter {
+  // Identity & Devices
+  createAccount(account: PublicIdentity): Promise<void>;
+  getAccount(publicId: string): Promise<PublicIdentity | null>;
+  createDevice(device: PublicDevice): Promise<void>;
+  getDevice(deviceId: string): Promise<PublicDevice | null>;
+  listDevices(accountPublicId: string): Promise<PublicDevice[]>;
+  revokeDevice(deviceId: string): Promise<boolean>;
+
+  // Invitations
+  createInvitation(invitation: InvitationRecord): Promise<void>;
+  getInvitationByHash(tokenHash: string): Promise<InvitationRecord | null>;
+  markInvitationRedeemed(id: string): Promise<boolean>;
+  revokeInvitation(id: string, creatorPublicId: string): Promise<boolean>;
+
+  // Connection Requests
+  createConnectionRequest(request: ConnectionRequest): Promise<void>;
+  getConnectionRequest(id: string): Promise<ConnectionRequest | null>;
+  updateConnectionState(
+    id: string,
+    state: ConnectionRequest['state'],
+    recipientPublicId: string
+  ): Promise<boolean>;
+  listIncomingRequests(recipientPublicId: string): Promise<ConnectionRequest[]>;
+  areConnected(userA: string, userB: string): Promise<boolean>;
+
+  // Ciphertext Message Queue
+  enqueueMessage(envelope: MessageEnvelope): Promise<void>;
+  getPendingMessages(recipientDeviceId: string): Promise<MessageEnvelope[]>;
+  acknowledgeMessages(envelopeIds: string[]): Promise<number>;
+  countQueuedMessages(): Promise<number>;
+}

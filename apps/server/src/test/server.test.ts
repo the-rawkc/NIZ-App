@@ -1,0 +1,272 @@
+import { describe, it, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import type { FastifyInstance } from 'fastify';
+import { buildApp } from '../app.js';
+import { MemoryStorageAdapter } from '../storage/memory.js';
+
+describe('NIZ Chat Server & Security Invariants', () => {
+  let app: FastifyInstance;
+  let storage: MemoryStorageAdapter;
+
+  before(async () => {
+    storage = new MemoryStorageAdapter();
+    app = await buildApp({ storage });
+    await app.ready();
+  });
+
+  after(async () => {
+    await app.close();
+  });
+
+  it('GET /health returns 200 with server status', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/health',
+    });
+
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.status, 'healthy');
+    assert.equal(typeof body.uptimeSeconds, 'number');
+    assert.equal(body.queuedMessagesTotal, 0);
+  });
+
+  it('POST /v1/identity/register registers public identity and device', async () => {
+    const validPublicId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const deviceId = crypto.randomUUID();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: validPublicId,
+        device: {
+          deviceId,
+          publicIdentityKey: Buffer.from('mock-public-identity-key-32-bytes').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-public-prekey-32-bytes-long').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+          deviceName: 'Web Browser Alpha',
+        },
+      },
+    });
+
+    assert.equal(res.statusCode, 201);
+    const body = JSON.parse(res.body);
+    assert.equal(body.success, true);
+    assert.equal(body.publicId, validPublicId);
+    assert.equal(body.deviceId, deviceId);
+  });
+
+  it('SECURITY INVARIANT 1: Rejects payload with private key or secret fields', async () => {
+    const validPublicId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const deviceId = crypto.randomUUID();
+
+    // Attacker or buggy client attempting to upload private key
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: validPublicId,
+        device: {
+          deviceId,
+          publicIdentityKey: Buffer.from('mock-public-identity-key-32-bytes').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-public-prekey-32-bytes-long').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+          private_key: 'super-secret-private-key-leak', // FORBIDDEN
+        },
+      },
+    });
+
+    assert.equal(res.statusCode, 400);
+    const body = JSON.parse(res.body);
+    assert.equal(body.error, 'BAD_REQUEST');
+    assert.match(body.message, /SECURITY INVARIANT VIOLATION/);
+  });
+
+  it('Ephemeral Invitations: Lifecycle, expiry, and single-use enforcement', async () => {
+    const creatorPublicId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const deviceId = crypto.randomUUID();
+
+    // Register creator
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: creatorPublicId,
+        device: {
+          deviceId,
+          publicIdentityKey: Buffer.from('mock-public-identity-key-32-bytes').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-public-prekey-32-bytes-long').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // Create 1-hour single-use invitation
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/invitations',
+      payload: {
+        creatorPublicId,
+        expiresInSeconds: 3600,
+        isSingleUse: true,
+      },
+    });
+
+    assert.equal(createRes.statusCode, 201);
+    const invData = JSON.parse(createRes.body);
+    assert.ok(invData.invitationToken);
+    assert.equal(invData.isSingleUse, true);
+
+    // Resolve invitation
+    const resolveRes = await app.inject({
+      method: 'POST',
+      url: '/v1/invitations/resolve',
+      payload: {
+        invitationToken: invData.invitationToken,
+      },
+    });
+    assert.equal(resolveRes.statusCode, 200);
+    const resolved = JSON.parse(resolveRes.body);
+    assert.equal(resolved.valid, true);
+    assert.equal(resolved.creatorPublicId, creatorPublicId);
+  });
+
+  it('SECURITY INVARIANT 3: Recipient approval required before messaging', async () => {
+    const aliceId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const bobId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const aliceDeviceId = crypto.randomUUID();
+    const bobDeviceId = crypto.randomUUID();
+
+    // Register Alice
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: aliceId,
+        device: {
+          deviceId: aliceDeviceId,
+          publicIdentityKey: Buffer.from('alice-public-identity-key-32-bytes').toString('base64'),
+          publicSignedPrekey: Buffer.from('alice-public-prekey-32-bytes-long').toString('base64'),
+          signedPrekeySignature: Buffer.from('alice-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // Register Bob
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: bobId,
+        device: {
+          deviceId: bobDeviceId,
+          publicIdentityKey: Buffer.from('bob-public-identity-key-32-bytes-').toString('base64'),
+          publicSignedPrekey: Buffer.from('bob-public-prekey-32-bytes-long-').toString('base64'),
+          signedPrekeySignature: Buffer.from('bob-signature-64-bytes-long-padding-bytes-for-test-').toString('base64'),
+        },
+      },
+    });
+
+    // Alice attempts to send a message to Bob BEFORE connection approval
+    const unauthorizedMsgRes = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        envelopeId: crypto.randomUUID(),
+        senderPublicId: aliceId,
+        senderDeviceId: aliceDeviceId,
+        recipientPublicId: bobId,
+        recipientDeviceId: bobDeviceId,
+        ratchetHeader: {
+          dhPublicKey: Buffer.from('ratchet-ephemeral-dh-key-32-bytes').toString('base64'),
+          pn: 0,
+          n: 0,
+        },
+        ciphertext: Buffer.from('opaque-encrypted-ciphertext-bytes').toString('base64'),
+        nonce: Buffer.from('12-byte-nonce-here').toString('base64'),
+        protocolVersion: 'niz-dr-v1',
+        createdAt: new Date().toISOString(),
+      },
+    });
+
+    // Must be rejected with 403 Forbidden!
+    assert.equal(unauthorizedMsgRes.statusCode, 403);
+    const unauthBody = JSON.parse(unauthorizedMsgRes.body);
+    assert.equal(unauthBody.error, 'FORBIDDEN');
+
+    // Now Alice sends a connection request to Bob
+    const connReqRes = await app.inject({
+      method: 'POST',
+      url: '/v1/connection-requests',
+      headers: { 'x-sender-public-id': aliceId },
+      payload: { recipientPublicId: bobId },
+    });
+    assert.equal(connReqRes.statusCode, 201);
+    const reqData = JSON.parse(connReqRes.body);
+
+    // Bob approves the connection
+    const approveRes = await app.inject({
+      method: 'POST',
+      url: '/v1/connection-requests/decision',
+      headers: { 'x-recipient-public-id': bobId },
+      payload: {
+        requestId: reqData.requestId,
+        decision: 'approve',
+      },
+    });
+    assert.equal(approveRes.statusCode, 200);
+
+    // Now Alice sends the message again — it must succeed (202 Accepted)
+    const envelopeId = crypto.randomUUID();
+    const authorizedMsgRes = await app.inject({
+      method: 'POST',
+      url: '/v1/messages',
+      payload: {
+        envelopeId,
+        senderPublicId: aliceId,
+        senderDeviceId: aliceDeviceId,
+        recipientPublicId: bobId,
+        recipientDeviceId: bobDeviceId,
+        ratchetHeader: {
+          dhPublicKey: Buffer.from('ratchet-ephemeral-dh-key-32-bytes').toString('base64'),
+          pn: 0,
+          n: 0,
+        },
+        ciphertext: Buffer.from('opaque-encrypted-ciphertext-bytes').toString('base64'),
+        nonce: Buffer.from('12-byte-nonce-here').toString('base64'),
+        protocolVersion: 'niz-dr-v1',
+        createdAt: new Date().toISOString(),
+      },
+    });
+
+    assert.equal(authorizedMsgRes.statusCode, 202);
+
+    // Bob fetches his queued messages
+    const queueRes = await app.inject({
+      method: 'GET',
+      url: `/v1/messages/queue/${bobDeviceId}`,
+    });
+    assert.equal(queueRes.statusCode, 200);
+    const queueData = JSON.parse(queueRes.body);
+    assert.equal(queueData.envelopes.length, 1);
+    assert.equal(queueData.envelopes[0].envelopeId, envelopeId);
+
+    // Bob acknowledges message receipt -> server purges ciphertext
+    const ackRes = await app.inject({
+      method: 'POST',
+      url: '/v1/messages/ack',
+      payload: { envelopeIds: [envelopeId] },
+    });
+    assert.equal(ackRes.statusCode, 200);
+    assert.equal(JSON.parse(ackRes.body).purgedCount, 1);
+
+    // Verify queue is now empty
+    const emptyQueueRes = await app.inject({
+      method: 'GET',
+      url: `/v1/messages/queue/${bobDeviceId}`,
+    });
+    assert.equal(JSON.parse(emptyQueueRes.body).envelopes.length, 0);
+  });
+});
