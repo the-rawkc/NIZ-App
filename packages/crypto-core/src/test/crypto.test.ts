@@ -13,6 +13,8 @@ import {
   initBobSession,
   ratchetEncrypt,
   ratchetDecrypt,
+  encryptAttachment,
+  decryptAttachment,
 } from '../index.js';
 
 describe('NIZ Crypto Core & QR Lifecycle (Phase 2)', () => {
@@ -171,6 +173,53 @@ describe('NIZ Crypto Core & QR Lifecycle (Phase 2)', () => {
         await ratchetDecrypt(bobSession, tamperedPayload);
       },
       /AEAD Decryption failed: MAC verification failed/
+    );
+  });
+
+  it('Phase 6: Client-side attachment encryption, integrity verification, and tamper rejection', async () => {
+    const originalContent = new TextEncoder().encode('Confidential contract signed document content: NIZ Chat E2EE attachment.');
+    const mimeType = 'text/plain';
+    const filename = 'contract.txt';
+
+    // 1. Client encrypts attachment
+    const { ciphertext, metadata } = await encryptAttachment(originalContent, mimeType, filename);
+
+    assert.ok(ciphertext.length > originalContent.length); // AEAD overhead (tag)
+    assert.equal(metadata.mimeType, mimeType);
+    assert.equal(metadata.filename, filename);
+    assert.equal(metadata.byteSize, originalContent.length);
+    assert.equal(metadata.mediaKey.length, 64); // 32 bytes hex
+    assert.equal(metadata.nonce.length, 48); // 24 bytes hex
+    assert.equal(metadata.sha256.length, 64); // 32 bytes SHA-256 hex
+
+    // 2. Client decrypts attachment
+    const decrypted = await decryptAttachment(ciphertext, metadata);
+    assert.deepEqual(decrypted, originalContent);
+    assert.equal(new TextDecoder().decode(decrypted), 'Confidential contract signed document content: NIZ Chat E2EE attachment.');
+
+    // 3. Negative Security Invariant: SHA-256 mismatch rejection
+    const alteredMetadata = { ...metadata, sha256: '0'.repeat(64) };
+    await assert.rejects(
+      async () => {
+        await decryptAttachment(ciphertext, alteredMetadata);
+      },
+      /ATTACHMENT_INTEGRITY_ERROR/
+    );
+
+    // 4. Negative Security Invariant: Tampered ciphertext rejection
+    const tamperedCiphertext = new Uint8Array(ciphertext);
+    tamperedCiphertext[10] ^= 0xff; // Flip bits
+    // Recompute sha256 so hash check passes, but AEAD MAC authentication fails
+    const _s = _sodium;
+    await _s.ready;
+    const tamperedHash = _s.to_hex(_s.crypto_hash_sha256(tamperedCiphertext));
+    const tamperedHashMetadata = { ...metadata, sha256: tamperedHash };
+
+    await assert.rejects(
+      async () => {
+        await decryptAttachment(tamperedCiphertext, tamperedHashMetadata);
+      },
+      /ATTACHMENT_DECRYPTION_FAILED/
     );
   });
 });

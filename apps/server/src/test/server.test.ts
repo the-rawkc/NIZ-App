@@ -771,4 +771,208 @@ describe('NIZ Chat Server & Security Invariants', () => {
     });
     assert.equal(JSON.parse(devicesRes.body).devices.length, 0);
   });
+
+  it('Phase 6: Encrypted attachment upload and download between approved contacts', async () => {
+    const aliceId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const bobId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const devA = crypto.randomUUID();
+    const devB = crypto.randomUUID();
+
+    // Register Alice & Bob
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: aliceId,
+        device: {
+          deviceId: devA,
+          publicIdentityKey: Buffer.from('mock-alice-identity-key-32-bytes').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-alice-prekey-32-bytes-long').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: bobId,
+        device: {
+          deviceId: devB,
+          publicIdentityKey: Buffer.from('mock-bob-identity-key-32-bytes--').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-bob-prekey-32-bytes-long--').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // Establish mutual approval
+    const reqRes = await app.inject({
+      method: 'POST',
+      url: '/v1/connection-requests',
+      headers: { 'x-sender-public-id': aliceId },
+      payload: {
+        recipientPublicId: bobId,
+      },
+    });
+    const { requestId } = JSON.parse(reqRes.body);
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/connection-requests/decision',
+      headers: { 'x-recipient-public-id': bobId },
+      payload: { requestId, decision: 'approve' },
+    });
+
+    // 1. Alice creates encrypted mock ciphertext buffer
+    const mockCiphertext = Buffer.from('XChaCha20-Poly1305 encrypted opaque binary data for image or PDF');
+    const sha256Hash = crypto.createHash('sha256').update(mockCiphertext).digest('hex');
+
+    // 2. Alice uploads attachment
+    const uploadRes = await app.inject({
+      method: 'POST',
+      url: '/v1/attachments/upload',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-sender-public-id': aliceId,
+        'x-recipient-public-id': bobId,
+        'x-ciphertext-sha256': sha256Hash,
+      },
+      payload: mockCiphertext,
+    });
+
+    assert.equal(uploadRes.statusCode, 201);
+    const uploadData = JSON.parse(uploadRes.body);
+    assert.ok(uploadData.attachmentId);
+    assert.equal(uploadData.sizeBytes, mockCiphertext.length);
+    assert.equal(uploadData.downloadUrl, `/v1/attachments/${uploadData.attachmentId}`);
+
+    // 3. Bob downloads attachment
+    const downloadRes = await app.inject({
+      method: 'GET',
+      url: uploadData.downloadUrl,
+      headers: {
+        'x-requester-public-id': bobId,
+      },
+    });
+
+    assert.equal(downloadRes.statusCode, 200);
+    assert.equal(downloadRes.headers['content-type'], 'application/octet-stream');
+    assert.equal(downloadRes.headers['x-ciphertext-sha256'], sha256Hash);
+    assert.deepEqual(downloadRes.rawPayload, mockCiphertext);
+
+    // 4. Participant deletes attachment
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: uploadData.downloadUrl,
+      headers: {
+        'x-requester-public-id': aliceId,
+      },
+    });
+    assert.equal(delRes.statusCode, 204);
+
+    // 5. Subsequent download returns 404
+    const notFoundRes = await app.inject({
+      method: 'GET',
+      url: uploadData.downloadUrl,
+      headers: {
+        'x-requester-public-id': bobId,
+      },
+    });
+    assert.equal(notFoundRes.statusCode, 404);
+  });
+
+  it('Phase 6 SECURITY INVARIANTS: Attachment security policies & error boundaries', async () => {
+    const unapprovedSender = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const targetRecipient = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const thirdParty = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const blob = Buffer.from('Mock encrypted bytes');
+    const hash = crypto.createHash('sha256').update(blob).digest('hex');
+
+    // 1. Upload to unapproved recipient -> 403 Forbidden
+    const unapprovedUploadRes = await app.inject({
+      method: 'POST',
+      url: '/v1/attachments/upload',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-sender-public-id': unapprovedSender,
+        'x-recipient-public-id': targetRecipient,
+        'x-ciphertext-sha256': hash,
+      },
+      payload: blob,
+    });
+    assert.equal(unapprovedUploadRes.statusCode, 403);
+    assert.equal(JSON.parse(unapprovedUploadRes.body).error, 'RECIPIENT_APPROVAL_REQUIRED');
+
+    // 2. Upload with mismatched SHA-256 hash -> 400 Bad Request
+    // Manually register and connect users to test hash mismatch
+    await storage.createAccount({ publicId: unapprovedSender, createdAt: new Date().toISOString(), status: 'active' });
+    await storage.createAccount({ publicId: targetRecipient, createdAt: new Date().toISOString(), status: 'active' });
+    const connReqId = crypto.randomUUID();
+    await storage.createConnectionRequest({
+      id: connReqId,
+      senderPublicId: unapprovedSender,
+      recipientPublicId: targetRecipient,
+      state: 'approved',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    const mismatchRes = await app.inject({
+      method: 'POST',
+      url: '/v1/attachments/upload',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-sender-public-id': unapprovedSender,
+        'x-recipient-public-id': targetRecipient,
+        'x-ciphertext-sha256': '0'.repeat(64),
+      },
+      payload: blob,
+    });
+    assert.equal(mismatchRes.statusCode, 400);
+    assert.equal(JSON.parse(mismatchRes.body).error, 'HASH_MISMATCH');
+
+    // 3. Unauthorized third-party download rejection -> 403 Forbidden
+    const validUploadRes = await app.inject({
+      method: 'POST',
+      url: '/v1/attachments/upload',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-sender-public-id': unapprovedSender,
+        'x-recipient-public-id': targetRecipient,
+        'x-ciphertext-sha256': hash,
+      },
+      payload: blob,
+    });
+    assert.equal(validUploadRes.statusCode, 201);
+    const { downloadUrl } = JSON.parse(validUploadRes.body);
+
+    const unauthorizedDownloadRes = await app.inject({
+      method: 'GET',
+      url: downloadUrl,
+      headers: {
+        'x-requester-public-id': thirdParty,
+      },
+    });
+    assert.equal(unauthorizedDownloadRes.statusCode, 403);
+    assert.equal(JSON.parse(unauthorizedDownloadRes.body).error, 'FORBIDDEN');
+
+    // 4. Over-limit payload size -> 413 Payload Too Large
+    const oversizedBlob = Buffer.alloc(25 * 1024 * 1024 + 1024); // 25MB + 1KB
+    const oversizedHash = crypto.createHash('sha256').update(oversizedBlob).digest('hex');
+    const oversizeRes = await app.inject({
+      method: 'POST',
+      url: '/v1/attachments/upload',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-sender-public-id': unapprovedSender,
+        'x-recipient-public-id': targetRecipient,
+        'x-ciphertext-sha256': oversizedHash,
+      },
+      payload: oversizedBlob,
+    });
+    assert.equal(oversizeRes.statusCode, 413);
+    assert.equal(JSON.parse(oversizeRes.body).error, 'PAYLOAD_TOO_LARGE');
+  });
 });

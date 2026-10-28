@@ -9,6 +9,7 @@ import type {
   FeatureFlag,
   AdminAuditEvent,
   MessageEnvelope,
+  AttachmentRecord,
 } from '@niz/shared-types';
 import type { IStorageAdapter } from './interface.js';
 
@@ -19,6 +20,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
   private connectionRequests = new Map<string, ConnectionRequest>();
   private abuseReports: ReportAbuseRecord[] = [];
   private messageQueue = new Map<string, MessageEnvelope>();
+  private attachments = new Map<string, { record: AttachmentRecord; data: Buffer }>();
   private auditEvents: AdminAuditEvent[] = [];
   private featureFlags = new Map<string, FeatureFlag>([
     [
@@ -246,6 +248,13 @@ export class MemoryStorageAdapter implements IStorageAdapter {
       }
     }
 
+    // Purge encrypted attachments
+    for (const [attId, item] of this.attachments.entries()) {
+      if (item.record.uploaderPublicId === publicId || item.record.recipientPublicId === publicId) {
+        this.attachments.delete(attId);
+      }
+    }
+
     return true;
   }
 
@@ -304,5 +313,26 @@ export class MemoryStorageAdapter implements IStorageAdapter {
 
   async countQueuedMessages(): Promise<number> {
     return this.messageQueue.size;
+  }
+
+  // Encrypted Attachments
+  async saveAttachment(record: AttachmentRecord, blob: Buffer): Promise<void> {
+    this.attachments.set(record.attachmentId, {
+      record: { ...record },
+      data: Buffer.from(blob),
+    });
+  }
+
+  async getAttachment(attachmentId: string): Promise<{ record: AttachmentRecord; data: Buffer } | null> {
+    const item = this.attachments.get(attachmentId);
+    if (!item) return null;
+    return {
+      record: { ...item.record },
+      data: Buffer.from(item.data),
+    };
+  }
+
+  async deleteAttachment(attachmentId: string): Promise<boolean> {
+    return this.attachments.delete(attachmentId);
   }
 }

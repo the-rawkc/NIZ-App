@@ -60,3 +60,17 @@ CREATE TABLE IF NOT EXISTS message_queue (
 
 CREATE INDEX IF NOT EXISTS idx_message_queue_recipient ON message_queue(recipient_public_id, recipient_device_id);
 CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON invitations(token_hash);
+
+-- Encrypted Attachments: Stores strictly ciphertext metadata (zero plaintext or keys)
+CREATE TABLE IF NOT EXISTS encrypted_attachments (
+    attachment_id UUID PRIMARY KEY,
+    uploader_public_id VARCHAR(75) NOT NULL REFERENCES accounts(public_id) ON DELETE CASCADE,
+    recipient_public_id VARCHAR(75) NOT NULL REFERENCES accounts(public_id) ON DELETE CASCADE,
+    size_bytes BIGINT NOT NULL,
+    sha256_ciphertext VARCHAR(64) NOT NULL,
+    storage_path TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITH TIME ZONE DEFAULT (CURRENT_TIMESTAMP + INTERVAL '14 days')
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_participants ON encrypted_attachments(uploader_public_id, recipient_public_id);

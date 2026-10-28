@@ -9,20 +9,29 @@ import {
   initAliceSession,
   ratchetEncrypt,
   ratchetDecrypt,
+  encryptAttachment,
+  decryptAttachment,
   type ClientIdentityBundle,
   type NizParsedQr,
   type RatchetSessionState,
 } from '@niz/crypto-core';
-import type { ContactSummary, MessageEnvelope } from '@niz/shared-types';
+import type { ContactSummary, MessageEnvelope, EncryptedAttachmentMetadata } from '@niz/shared-types';
 import { NizLogo } from './components/NizLogo';
 
 const API_BASE = 'http://localhost:4000';
 const WS_BASE = 'ws://localhost:4000';
 
+interface ChatAttachment {
+  attachmentId: string;
+  downloadUrl: string;
+  metadata: EncryptedAttachmentMetadata;
+}
+
 interface ChatMessage {
   id: string;
   sender: 'me' | 'them';
   text: string;
+  attachment?: ChatAttachment;
   timestamp: string;
   verifiedE2EE: boolean;
 }
@@ -73,9 +82,11 @@ export const App: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [messageInput, setMessageInput] = useState<string>('');
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState<boolean>(false);
 
   const ratchetSessionsRef = useRef<Map<string, RatchetSessionState>>(new Map());
   const wsRef = useRef<WebSocket | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const showNotification = (msg: string) => {
     setNotification(msg);
@@ -504,6 +515,161 @@ export const App: React.FC = () => {
     }
   };
 
+  // Encrypt and send an attachment
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !identity || !activeChatContact) return;
+
+    if (file.size > 25 * 1024 * 1024) {
+      showNotification('File exceeds 25MB attachment limit.');
+      return;
+    }
+
+    setIsUploadingAttachment(true);
+    try {
+      let session = ratchetSessionsRef.current.get(activeChatContact.counterpartPublicId);
+      if (!session && activeChatContact.counterpartIdentityKey) {
+        const masterSecret = new Uint8Array(32).fill(42);
+        session = await initAliceSession(masterSecret, activeChatContact.counterpartIdentityKey);
+        ratchetSessionsRef.current.set(activeChatContact.counterpartPublicId, session);
+      }
+
+      if (!session) {
+        throw new Error('No active ratchet session for recipient.');
+      }
+
+      // 1. Read file bytes and encrypt client-side
+      const arrayBuf = await file.arrayBuffer();
+      const fileBytes = new Uint8Array(arrayBuf);
+      const mime = file.type || 'application/octet-stream';
+      const encrypted = await encryptAttachment(fileBytes, mime, file.name);
+
+      // 2. Upload ciphertext blob to server (Server has strictly opaque bytes)
+      const uploadRes = await fetch(`${API_BASE}/v1/attachments/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'x-sender-public-id': identity.publicId,
+          'x-recipient-public-id': activeChatContact.counterpartPublicId,
+          'x-ciphertext-sha256': encrypted.metadata.sha256,
+        },
+        body: encrypted.ciphertext as unknown as BodyInit,
+      });
+
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json();
+        throw new Error(errData.message || 'Failed to upload encrypted attachment');
+      }
+
+      const uploadData = await uploadRes.json();
+
+      // 3. Encrypt attachment metadata inside Double Ratchet payload
+      const attachmentPayload = JSON.stringify({
+        type: 'attachment',
+        attachmentId: uploadData.attachmentId,
+        downloadUrl: uploadData.downloadUrl,
+        metadata: encrypted.metadata,
+      });
+
+      const encryptedRatchet = await ratchetEncrypt(session, attachmentPayload);
+
+      // 4. Fetch recipient device ID and dispatch ciphertext envelope
+      const devicesRes = await fetch(`${API_BASE}/v1/identity/${activeChatContact.counterpartPublicId}/devices`);
+      const devicesData = await devicesRes.json();
+      const recipientDeviceId = devicesData.devices?.[0]?.deviceId;
+
+      if (!recipientDeviceId) {
+        throw new Error('Recipient device not reachable');
+      }
+
+      const envelopeId = crypto.randomUUID();
+      const envelope: MessageEnvelope = {
+        envelopeId,
+        senderPublicId: identity.publicId,
+        senderDeviceId: identity.deviceId,
+        recipientPublicId: activeChatContact.counterpartPublicId,
+        recipientDeviceId,
+        ratchetHeader: encryptedRatchet.header,
+        ciphertext: encryptedRatchet.ciphertext,
+        nonce: encryptedRatchet.nonce,
+        protocolVersion: 'niz-dr-v1',
+        createdAt: new Date().toISOString(),
+      };
+
+      const msgRes = await fetch(`${API_BASE}/v1/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(envelope),
+      });
+
+      if (!msgRes.ok) {
+        throw new Error('Server rejected message envelope');
+      }
+
+      // Add to local message list
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: envelopeId,
+          sender: 'me',
+          text: file.name,
+          attachment: {
+            attachmentId: uploadData.attachmentId,
+            downloadUrl: uploadData.downloadUrl,
+            metadata: encrypted.metadata,
+          },
+          timestamp: new Date().toLocaleTimeString(),
+          verifiedE2EE: true,
+        },
+      ]);
+
+      showNotification(`Encrypted attachment "${file.name}" sent!`);
+    } catch (err: unknown) {
+      showNotification(err instanceof Error ? err.message : 'Attachment sending failed');
+    } finally {
+      setIsUploadingAttachment(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Download and decrypt attachment client-side
+  const handleDownloadAttachment = async (attachment: ChatAttachment) => {
+    if (!identity) return;
+    try {
+      showNotification(`Downloading and decrypting "${attachment.metadata.filename}"...`);
+      const res = await fetch(`${API_BASE}${attachment.downloadUrl}`, {
+        headers: {
+          'x-requester-public-id': identity.publicId,
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to download ciphertext from server');
+      }
+
+      const blobBuf = await res.arrayBuffer();
+      const ciphertext = new Uint8Array(blobBuf);
+
+      // Decrypt client-side using stored mediaKey
+      const decryptedBytes = await decryptAttachment(ciphertext, attachment.metadata);
+
+      // Trigger browser download
+      const blob = new Blob([decryptedBytes as unknown as BlobPart], { type: attachment.metadata.mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = attachment.metadata.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showNotification(`Attachment "${attachment.metadata.filename}" decrypted & saved!`);
+    } catch (err: unknown) {
+      showNotification(err instanceof Error ? err.message : 'Decryption failed');
+    }
+  };
+
   // Setup WebSocket connection for incoming ciphertext envelopes
   useEffect(() => {
     if (!identity) return;
@@ -548,13 +714,30 @@ export const App: React.FC = () => {
             }
           }
 
+          let attachmentObj: ChatAttachment | undefined;
+          let displayText = decryptedText;
+          if (decryptedText.startsWith('{"type":"attachment"')) {
+            try {
+              const parsedAtt = JSON.parse(decryptedText);
+              attachmentObj = {
+                attachmentId: parsedAtt.attachmentId,
+                downloadUrl: parsedAtt.downloadUrl,
+                metadata: parsedAtt.metadata,
+              };
+              displayText = parsedAtt.metadata.filename;
+            } catch {
+              // fallback to raw text
+            }
+          }
+
           // Append to message thread
           setChatMessages((prev) => [
             ...prev,
             {
               id: envelope.envelopeId,
               sender: 'them',
-              text: decryptedText,
+              text: displayText,
+              attachment: attachmentObj,
               timestamp: new Date(envelope.createdAt).toLocaleTimeString(),
               verifiedE2EE: true,
             },
@@ -1228,7 +1411,57 @@ export const App: React.FC = () => {
                         borderColor: m.sender === 'me' ? '#059669' : '#374151',
                       }}
                     >
-                      <div style={{ fontSize: '0.92rem', lineHeight: 1.5 }}>{m.text}</div>
+                      {m.attachment ? (
+                        <div style={{ marginBottom: '6px' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              padding: '8px 12px',
+                              background: 'rgba(0,0,0,0.3)',
+                              borderRadius: '8px',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                            }}
+                          >
+                            <span style={{ fontSize: '1.4rem' }}>📎</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div
+                                style={{
+                                  fontSize: '0.85rem',
+                                  fontWeight: 600,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {m.attachment.metadata.filename}
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: '#9CA3AF' }}>
+                                {(m.attachment.metadata.byteSize / 1024).toFixed(1)} KB · {m.attachment.metadata.mimeType}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadAttachment(m.attachment!)}
+                              style={{
+                                backgroundColor: '#10B981',
+                                color: '#090D14',
+                                border: 'none',
+                                borderRadius: '6px',
+                                padding: '6px 12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Decrypt & Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.92rem', lineHeight: 1.5 }}>{m.text}</div>
+                      )}
                       <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: '4px', textAlign: 'right' }}>
                         {m.timestamp} · 🔒 E2EE
                       </div>
@@ -1237,8 +1470,30 @@ export const App: React.FC = () => {
                 )}
               </div>
 
-              {/* Input Area */}
-              <div style={{ display: 'flex', gap: '10px' }}>
+              {/* Input Area with Attachment Button */}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingAttachment}
+                  className="btn-secondary"
+                  style={{
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '0.85rem',
+                  }}
+                  title="Attach encrypted file"
+                >
+                  {isUploadingAttachment ? '⏳ Uploading...' : '📎 Attach'}
+                </button>
                 <input
                   type="text"
                   placeholder="Type an end-to-end encrypted message..."

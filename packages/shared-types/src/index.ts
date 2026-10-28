@@ -4,3 +4,4 @@ export * from './connection.js';
 export * from './messaging.js';
 export * from './admin.js';
 export * from './metrics.js';
+export * from './attachment.js';

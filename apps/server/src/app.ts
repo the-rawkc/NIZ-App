@@ -10,6 +10,7 @@ import { invitationRoutes } from './routes/invitations.js';
 import { connectionRoutes } from './routes/connections.js';
 import { messageRoutes } from './routes/messages.js';
 import { adminRoutes } from './routes/admin.js';
+import { attachmentRoutes } from './routes/attachments.js';
 import { logger } from './utils/logger.js';
 
 export interface AppOptions {
@@ -20,7 +21,17 @@ export interface AppOptions {
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: false, // Using our structured content-free logger
+    bodyLimit: 30 * 1024 * 1024, // 30MB limit for raw attachments
   });
+
+  // Support raw octet-stream buffers for encrypted attachment uploads
+  app.addContentTypeParser(
+    'application/octet-stream',
+    { parseAs: 'buffer' },
+    (_req, body, done) => {
+      done(null, body);
+    }
+  );
 
   const activeSockets = new Map<string, WebSocket>();
 
@@ -92,6 +103,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await app.register(connectionRoutes(opts.storage));
   await app.register(messageRoutes(opts.storage, activeSockets));
   await app.register(adminRoutes(opts.storage));
+  await app.register(attachmentRoutes(opts.storage));
 
   return app;
 }

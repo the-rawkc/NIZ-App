@@ -9,6 +9,7 @@ import type {
   FeatureFlag,
   AdminAuditEvent,
   MessageEnvelope,
+  AttachmentRecord,
 } from '@niz/shared-types';
 
 export interface IStorageAdapter {
@@ -52,6 +53,11 @@ export interface IStorageAdapter {
   updateFeatureFlag(key: string, enabled: boolean, rolloutPercentage?: number): Promise<boolean>;
   recordAdminAuditEvent(event: AdminAuditEvent): Promise<void>;
   listAdminAuditEvents(): Promise<AdminAuditEvent[]>;
+
+  // Encrypted Attachments (Opaque ciphertext blobs only)
+  saveAttachment(record: AttachmentRecord, blob: Buffer): Promise<void>;
+  getAttachment(attachmentId: string): Promise<{ record: AttachmentRecord; data: Buffer } | null>;
+  deleteAttachment(attachmentId: string): Promise<boolean>;
 
   // Ciphertext Message Queue
   enqueueMessage(envelope: MessageEnvelope): Promise<void>;
