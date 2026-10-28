@@ -1,0 +1,24 @@
+{
+  "name": "@niz/crypto-core",
+  "version": "0.1.0",
+  "description": "Client-side cryptographic identity, key management, and QR payloads for NIZ Chat",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test dist/**/*.test.js",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
+  },
+  "dependencies": {
+    "@niz/shared-types": "*",
+    "@niz/validation": "*",
+    "libsodium-wrappers-sumo": "^0.7.15"
+  },
+  "devDependencies": {
+    "@types/libsodium-wrappers-sumo": "^0.7.13",
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.4"
+  }
+}

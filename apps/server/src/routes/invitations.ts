@@ -97,5 +97,22 @@ export const invitationRoutes = (storage: IStorageAdapter): FastifyPluginAsync =
         expiresAt: inv.expiresAt,
       });
     });
+
+    fastify.post<{ Params: { id: string } }>('/v1/invitations/:id/revoke', async (request, reply) => {
+      const { id } = request.params;
+      const creatorPublicId = request.headers['x-sender-public-id'] as string;
+
+      if (!creatorPublicId) {
+        return reply.status(401).send({ error: 'UNAUTHORIZED' });
+      }
+
+      const revoked = await storage.revokeInvitation(id, creatorPublicId);
+      if (!revoked) {
+        return reply.status(404).send({ error: 'INVITATION_NOT_FOUND_OR_FORBIDDEN' });
+      }
+
+      logger.info('Revoked ephemeral invitation', { invitationId: id, senderPublicId: creatorPublicId });
+      return reply.send({ success: true, invitationId: id, status: 'revoked' });
+    });
   };
 };

@@ -131,6 +131,114 @@ describe('NIZ Chat Server & Security Invariants', () => {
     const resolved = JSON.parse(resolveRes.body);
     assert.equal(resolved.valid, true);
     assert.equal(resolved.creatorPublicId, creatorPublicId);
+
+    // Revocation test: Creator revokes the invitation
+    const revokeRes = await app.inject({
+      method: 'POST',
+      url: `/v1/invitations/${invData.invitationId}/revoke`,
+      headers: { 'x-sender-public-id': creatorPublicId },
+    });
+    assert.equal(revokeRes.statusCode, 200);
+
+    // Resolving after revocation must fail closed
+    const resolveAfterRevoke = await app.inject({
+      method: 'POST',
+      url: '/v1/invitations/resolve',
+      payload: {
+        invitationToken: invData.invitationToken,
+      },
+    });
+    assert.equal(resolveAfterRevoke.statusCode, 400);
+    assert.equal(JSON.parse(resolveAfterRevoke.body).reason, 'revoked');
+  });
+
+  it('Single-use invitation prevents replay and concurrent reuse', async () => {
+    const creatorPublicId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    const deviceId = crypto.randomUUID();
+
+    // Register creator
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: creatorPublicId,
+        device: {
+          deviceId,
+          publicIdentityKey: Buffer.from('mock-creator-identity-key-32-bytes').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-creator-prekey-32-bytes-long').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // Create single-use invitation
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/v1/invitations',
+      payload: {
+        creatorPublicId,
+        expiresInSeconds: 1800,
+        isSingleUse: true,
+      },
+    });
+    const { invitationToken } = JSON.parse(createRes.body);
+
+    // Register user 1
+    const user1PublicId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: user1PublicId,
+        device: {
+          deviceId: crypto.randomUUID(),
+          publicIdentityKey: Buffer.from('mock-user1-identity-key-32-bytes--').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-user1-prekey-32-bytes-long---').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // User 1 uses token to send connection request -> succeeds
+    const conn1 = await app.inject({
+      method: 'POST',
+      url: '/v1/connection-requests',
+      headers: { 'x-sender-public-id': user1PublicId },
+      payload: {
+        recipientPublicId: creatorPublicId,
+        invitationToken,
+      },
+    });
+    assert.equal(conn1.statusCode, 201);
+
+    // Register user 2
+    const user2PublicId = `niz_id_${crypto.randomBytes(20).toString('hex')}`;
+    await app.inject({
+      method: 'POST',
+      url: '/v1/identity/register',
+      payload: {
+        publicId: user2PublicId,
+        device: {
+          deviceId: crypto.randomUUID(),
+          publicIdentityKey: Buffer.from('mock-user2-identity-key-32-bytes--').toString('base64'),
+          publicSignedPrekey: Buffer.from('mock-user2-prekey-32-bytes-long---').toString('base64'),
+          signedPrekeySignature: Buffer.from('mock-signature-64-bytes-long-padding-bytes-for-test').toString('base64'),
+        },
+      },
+    });
+
+    // User 2 attempts to reuse the single-use token -> fails with 400!
+    const conn2 = await app.inject({
+      method: 'POST',
+      url: '/v1/connection-requests',
+      headers: { 'x-sender-public-id': user2PublicId },
+      payload: {
+        recipientPublicId: creatorPublicId,
+        invitationToken,
+      },
+    });
+    assert.equal(conn2.statusCode, 400);
+    assert.equal(JSON.parse(conn2.body).error, 'INVITATION_ALREADY_REDEEMED');
   });
 
   it('SECURITY INVARIANT 3: Recipient approval required before messaging', async () => {
