@@ -59,6 +59,8 @@ interface ChatMessage {
 }
 
 export const App: React.FC = () => {
+  const [inApp, setInApp] = useState<boolean>(false);
+  const [showRestoreModal, setShowRestoreModal] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'identity' | 'invite' | 'connect' | 'requests' | 'contacts' | 'chat' | 'plans'>('identity');
   const [identity, setIdentity] = useState<ClientIdentityBundle | null>(null);
   const [permanentQrDataUrl, setPermanentQrDataUrl] = useState<string>('');
@@ -158,6 +160,7 @@ export const App: React.FC = () => {
         color: { dark: '#10B981', light: '#090D14' },
       });
       setPermanentQrDataUrl(dataUrl);
+      setInApp(true);
       showNotification('New cryptographic identity generated locally!');
     } catch (err: unknown) {
       showNotification(err instanceof Error ? err.message : 'Identity generation failed');
@@ -444,6 +447,20 @@ export const App: React.FC = () => {
         },
       });
 
+      const uri = generatePermanentIdentityQrPayload(
+        restored.publicId,
+        restored.privateIdentityKeyBase64,
+        safetyFingerprint
+      );
+      const dataUrl = await QRCode.toDataURL(uri, {
+        width: 256,
+        margin: 2,
+        color: { dark: '#10B981', light: '#090D14' },
+      });
+      setPermanentQrDataUrl(dataUrl);
+
+      setInApp(true);
+      setShowRestoreModal(false);
       setRestorePassphrase('');
       showNotification(`Identity "${restored.publicId}" successfully restored!`);
     } catch (err: unknown) {
@@ -1067,8 +1084,168 @@ export const App: React.FC = () => {
     }
   }, [activeTab, identity]);
 
+  if (!inApp && !identity) {
+    return (
+      <div className="landing-hero animate-fade-in">
+        {notification && <div className="toast-notice">{notification}</div>}
+        <div className="landing-glow-orb" />
+
+        <div className="floating-icon" style={{ marginBottom: '20px' }}>
+          <NizLogo size={76} />
+        </div>
+
+        <div className="hero-badge">
+          <span className="live-beacon" />
+          PROTOCOL ACTIVE · ZERO SERVER PLAINTEXT · DOUBLE RATCHET
+        </div>
+
+        <h1 className="hero-title">
+          Private, Autonomous & <span className="gradient-text">Zero-Knowledge</span> Messaging
+        </h1>
+
+        <p className="hero-subtitle">
+          Engineered for absolute secrecy. Cryptographic keys are generated client-side with zero KYC or phone numbers, and communication is secured by Signal Double Ratchet with post-quantum readiness.
+        </p>
+
+        {/* Member Gateway Choice Grid */}
+        <div className="onboarding-choices-grid">
+          {/* Option 1: New Member */}
+          <div className="choice-card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+              <span style={{ fontSize: '1.8rem' }}>✨</span>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#F8FAFC' }}>
+                New Member
+              </h3>
+            </div>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.88rem', lineHeight: 1.55, marginBottom: '22px' }}>
+              Create a fresh sovereign identity. Generate your Ed25519 signing keys and X25519 ratchet prekeys locally in your browser memory.
+            </p>
+            <button
+              onClick={handleGenerateIdentity}
+              disabled={isGenerating}
+              className="btn-primary"
+              style={{ width: '100%', padding: '14px 20px', fontSize: '0.95rem', fontWeight: 700 }}
+            >
+              {isGenerating ? '⏳ Generating Keys on Device...' : '🚀 Generate Anonymous Identity'}
+            </button>
+            <div style={{ marginTop: '14px', fontSize: '0.76rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>🔒 100% Free forever</span>
+              <span>·</span>
+              <span>No phone or email required</span>
+            </div>
+          </div>
+
+          {/* Option 2: Existing User */}
+          <div className="choice-card">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+              <span style={{ fontSize: '1.8rem' }}>🔐</span>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#F8FAFC' }}>
+                Existing User
+              </h3>
+            </div>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.88rem', lineHeight: 1.55, marginBottom: '22px' }}>
+              Restore your identity and contacts from an encrypted <code style={{ color: '#34D399', background: 'rgba(52, 211, 153, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>.nizvault</code> backup file or enter your session.
+            </p>
+
+            {!showRestoreModal ? (
+              <button
+                onClick={() => setShowRestoreModal(true)}
+                className="btn-secondary"
+                style={{ width: '100%', padding: '14px 20px', fontSize: '0.95rem', fontWeight: 700, borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38BDF8' }}
+              >
+                📂 Restore from Encrypted Backup
+              </button>
+            ) : (
+              <div style={{ background: 'rgba(10, 15, 26, 0.85)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+                <div style={{ fontSize: '0.8rem', color: '#94A3B8', marginBottom: '8px', fontWeight: 600 }}>
+                  Enter Master Passphrase:
+                </div>
+                <input
+                  type="password"
+                  placeholder="Passphrase (min 8 chars)"
+                  value={restorePassphrase}
+                  onChange={(e) => setRestorePassphrase(e.target.value)}
+                  style={{ width: '100%', marginBottom: '12px', padding: '10px 12px' }}
+                />
+                <input
+                  type="file"
+                  ref={backupFileRef}
+                  accept=".nizvault,.json"
+                  onChange={handleFileRestore}
+                  style={{ display: 'none' }}
+                />
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    onClick={() => backupFileRef.current?.click()}
+                    disabled={isRestoringBackup || !restorePassphrase}
+                    className="btn-primary"
+                    style={{ flex: 1, padding: '10px' }}
+                  >
+                    {isRestoringBackup ? 'Restoring...' : 'Select .nizvault'}
+                  </button>
+                  <button
+                    onClick={() => setShowRestoreModal(false)}
+                    className="btn-secondary"
+                    style={{ padding: '10px 14px' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginTop: '14px', fontSize: '0.76rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>🛡️ Argon2id / AES-GCM vault</span>
+              <span>·</span>
+              <span>Local client restore</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Feature Highlights Banner */}
+        <div className="features-banner">
+          <div className="feature-pill-card">
+            <div style={{ fontSize: '1.25rem', marginBottom: '6px' }}>🔒</div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#F8FAFC' }}>Double Ratchet</div>
+            <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '4px', lineHeight: 1.4 }}>
+              Diffie-Hellman ratchet generates fresh ephemeral session keys per message.
+            </div>
+          </div>
+
+          <div className="feature-pill-card">
+            <div style={{ fontSize: '1.25rem', marginBottom: '6px' }}>⚡</div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#F8FAFC' }}>Zero-Knowledge Relay</div>
+            <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '4px', lineHeight: 1.4 }}>
+              The server routes opaque envelopes without plaintext or private keys.
+            </div>
+          </div>
+
+          <div className="feature-pill-card">
+            <div style={{ fontSize: '1.25rem', marginBottom: '6px' }}>⏳</div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#F8FAFC' }}>Expiring QR Invites</div>
+            <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '4px', lineHeight: 1.4 }}>
+              Single-use and time-bounded invitation tokens that automatically self-destruct.
+            </div>
+          </div>
+
+          <div className="feature-pill-card">
+            <div style={{ fontSize: '1.25rem', marginBottom: '6px' }}>👥</div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#F8FAFC' }}>Safety Fingerprints</div>
+            <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '4px', lineHeight: 1.4 }}>
+              Out-of-band numeric SAS verification to eliminate MITM attacks.
+            </div>
+          </div>
+        </div>
+
+        <footer style={{ marginTop: '50px', color: '#64748B', fontSize: '0.8rem' }}>
+          NIZ Chat Protocol v1.0 · Autonomous Cryptographic Architecture
+        </footer>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '36px 20px', width: '100%' }}>
+    <div className="app-shell">
       {/* Dynamic Animated Toast Notification */}
       {notification && (
         <div className="toast-notice">
@@ -1076,124 +1253,170 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Header */}
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '32px',
-          paddingBottom: '22px',
-          borderBottom: '1px solid var(--color-border)',
-          flexWrap: 'wrap',
-          gap: '16px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      {/* Vertical Navigation Sidebar */}
+      <aside className="app-sidebar">
+        {/* Brand Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '22px' }}>
           <div className="floating-icon">
-            <NizLogo size={50} />
+            <NizLogo size={36} />
           </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h1 style={{ fontSize: '1.65rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#F8FAFC' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '1.2rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#F8FAFC' }}>
                 NIZ Chat
-              </h1>
-              <span className="badge">E2EE v1.0</span>
+              </span>
+              <span className="badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>E2EE</span>
             </div>
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.86rem', marginTop: '3px' }}>
-              Privacy-first, QR-connected messaging · Zero plaintext on server
-            </p>
+            <span style={{ fontSize: '0.72rem', color: '#64748B' }}>Zero Plaintext Core</span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {identity && (
+        {/* Identity Chip */}
+        {identity && (
+          <div
+            style={{
+              background: 'rgba(15, 23, 42, 0.8)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '12px',
+              padding: '10px 12px',
+              marginBottom: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#10B981', letterSpacing: '0.04em' }}>
+                MY IDENTITY
+              </span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(identity.publicId);
+                  showNotification('Public ID copied to clipboard');
+                }}
+                className="btn-secondary"
+                style={{ padding: '2px 6px', fontSize: '0.66rem' }}
+                title="Copy ID"
+              >
+                📋 Copy
+              </button>
+            </div>
             <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 14px',
-                borderRadius: '9999px',
-                background: 'rgba(15, 23, 42, 0.8)',
-                border: '1px solid var(--color-border)',
-                fontSize: '0.78rem',
                 fontFamily: 'monospace',
-                color: '#94A3B8',
+                fontSize: '0.74rem',
+                color: '#E2E8F0',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}
               title={identity.publicId}
             >
-              <span style={{ color: '#10B981', fontWeight: 700 }}>ID:</span>
-              <span>{identity.publicId.slice(0, 16)}...</span>
+              {identity.publicId}
             </div>
-          )}
+            <div style={{ fontSize: '0.66rem', color: '#64748B', marginTop: '4px' }}>
+              FP: {identity.safetyFingerprint.slice(0, 16)}...
+            </div>
+          </div>
+        )}
 
+        {/* Vertical Navigation Buttons */}
+        <div className="sidebar-nav-list">
+          <button
+            onClick={() => setActiveTab('identity')}
+            className={`sidebar-nav-btn ${activeTab === 'identity' ? 'active' : ''}`}
+          >
+            <span>🛡️ My Identity & QR</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`sidebar-nav-btn ${activeTab === 'chat' ? 'active' : ''}`}
+          >
+            <span>💬 Encrypted Chat</span>
+            {activeChatContact && (
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#38BDF8' }} />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('requests')}
+            className={`sidebar-nav-btn ${activeTab === 'requests' ? 'active' : ''}`}
+          >
+            <span>📬 Incoming Requests</span>
+            {pendingRequests.length > 0 && (
+              <span style={{ background: '#10B981', color: '#06090E', padding: '2px 7px', borderRadius: '999px', fontSize: '0.7rem', fontWeight: 800 }}>
+                {pendingRequests.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('contacts')}
+            className={`sidebar-nav-btn ${activeTab === 'contacts' ? 'active' : ''}`}
+          >
+            <span>👥 Contacts & Safety</span>
+            {contacts.length > 0 && (
+              <span style={{ color: '#94A3B8', fontSize: '0.72rem' }}>{contacts.length}</span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('invite')}
+            className={`sidebar-nav-btn ${activeTab === 'invite' ? 'active' : ''}`}
+          >
+            <span>⏳ Expiring Invites</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('connect')}
+            className={`sidebar-nav-btn ${activeTab === 'connect' ? 'active' : ''}`}
+          >
+            <span>📡 Scan / Connect</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('plans')}
+            className={`sidebar-nav-btn ${activeTab === 'plans' ? 'active' : ''}`}
+          >
+            <span>⚡ Plans & Quotas</span>
+          </button>
+        </div>
+
+        {/* Sidebar Footer Controls */}
+        <div style={{ paddingTop: '16px', borderTop: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div
             style={{
-              fontSize: '0.78rem',
+              fontSize: '0.76rem',
               fontWeight: 600,
-              padding: '6px 12px',
-              borderRadius: '9999px',
-              backgroundColor: isWsConnected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+              padding: '8px 12px',
+              borderRadius: '10px',
+              backgroundColor: isWsConnected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
               color: isWsConnected ? '#34D399' : '#F87171',
               border: '1px solid',
-              borderColor: isWsConnected ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)',
-              display: 'inline-flex',
+              borderColor: isWsConnected ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)',
+              display: 'flex',
               alignItems: 'center',
               gap: '8px',
             }}
           >
             {isWsConnected ? <span className="live-beacon" /> : <span className="offline-beacon" />}
-            {isWsConnected ? 'Live Push Active' : 'Offline Reconnecting'}
+            <span>{isWsConnected ? 'Live Push Active' : 'Offline Reconnecting'}</span>
           </div>
-        </div>
-      </header>
 
-      {/* Modern Navigation Tabs */}
-      <nav className="nav-tab-container">
-        <button
-          onClick={() => setActiveTab('identity')}
-          className={`nav-tab-btn ${activeTab === 'identity' ? 'active' : ''}`}
-        >
-          🛡️ My Identity & QR
-        </button>
-        <button
-          onClick={() => setActiveTab('invite')}
-          className={`nav-tab-btn ${activeTab === 'invite' ? 'active' : ''}`}
-        >
-          ⏳ Expiring Invite
-        </button>
-        <button
-          onClick={() => setActiveTab('connect')}
-          className={`nav-tab-btn ${activeTab === 'connect' ? 'active' : ''}`}
-        >
-          📡 Scan / Connect
-        </button>
-        <button
-          onClick={() => setActiveTab('requests')}
-          className={`nav-tab-btn ${activeTab === 'requests' ? 'active' : ''}`}
-        >
-          📬 Requests {pendingRequests.length > 0 && <span style={{ background: '#10B981', color: '#06090E', padding: '2px 6px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 800 }}>{pendingRequests.length}</span>}
-        </button>
-        <button
-          onClick={() => setActiveTab('contacts')}
-          className={`nav-tab-btn ${activeTab === 'contacts' ? 'active' : ''}`}
-        >
-          👥 Contacts & Safety
-        </button>
-        <button
-          onClick={() => setActiveTab('chat')}
-          className={`nav-tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
-        >
-          💬 Encrypted Chat
-        </button>
-        <button
-          onClick={() => setActiveTab('plans')}
-          className={`nav-tab-btn ${activeTab === 'plans' ? 'active' : ''}`}
-        >
-          ⚡ Plans & Quotas
-        </button>
-      </nav>
+          <button
+            onClick={() => setInApp(false)}
+            className="btn-secondary"
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              fontSize: '0.78rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              color: '#94A3B8',
+            }}
+            title="Return to Landing Page"
+          >
+            <span>🚪 Exit to Landing</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="app-main-content">
 
       {/* Tab 1: Identity & Permanent QR */}
       {activeTab === 'identity' && (
@@ -2160,6 +2383,7 @@ export const App: React.FC = () => {
       >
         NIZ Chat Version 1.0 · Double Ratchet End-to-End Encryption · Zero-Knowledge Architecture
       </footer>
+      </main>
     </div>
   );
 };
