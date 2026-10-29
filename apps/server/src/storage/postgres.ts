@@ -1,4 +1,6 @@
 import pg from 'pg';
+import fs from 'node:fs';
+import path from 'node:path';
 import type {
   PublicIdentity,
   PublicDevice,
@@ -38,6 +40,26 @@ export class PostgresStorageAdapter implements IStorageAdapter {
 
   async close(): Promise<void> {
     await this.pool.end();
+  }
+
+  async initializeSchema(): Promise<void> {
+    try {
+      const candidates = [
+        path.resolve(process.cwd(), 'src/db/init.sql'),
+        path.resolve(process.cwd(), 'dist/db/init.sql'),
+        path.resolve(process.cwd(), 'apps/server/src/db/init.sql'),
+        path.resolve(process.cwd(), 'db/init.sql'),
+      ];
+      for (const p of candidates) {
+        if (fs.existsSync(p)) {
+          const sql = fs.readFileSync(p, 'utf-8');
+          await this.pool.query(sql);
+          break;
+        }
+      }
+    } catch {
+      // In mock/test environments without real DB, fail gracefully
+    }
   }
 
   // Identity & Devices

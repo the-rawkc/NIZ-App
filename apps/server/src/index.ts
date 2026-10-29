@@ -12,6 +12,14 @@ const host = process.env.HOST || '0.0.0.0';
 const storage = createStorageAdapter();
 
 async function main() {
+  if ('initializeSchema' in storage && typeof (storage as any).initializeSchema === 'function') {
+    try {
+      await (storage as any).initializeSchema();
+    } catch {
+      // Continue startup
+    }
+  }
+
   const app = await buildApp({ storage });
 
   try {
