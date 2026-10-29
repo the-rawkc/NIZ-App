@@ -27,8 +27,21 @@ import type {
 } from '@niz/shared-types';
 import { NizLogo } from './components/NizLogo';
 
-const API_BASE = 'http://localhost:4000';
-const WS_BASE = 'ws://localhost:4000';
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  (typeof window !== 'undefined' && window.location.port === '5173'
+    ? 'http://localhost:4000'
+    : typeof window !== 'undefined'
+    ? window.location.origin
+    : 'http://localhost:4000');
+
+const WS_BASE =
+  import.meta.env.VITE_WS_BASE ||
+  (typeof window !== 'undefined' && window.location.port === '5173'
+    ? 'ws://localhost:4000'
+    : typeof window !== 'undefined'
+    ? (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host
+    : 'ws://localhost:4000');
 
 interface ChatAttachment {
   attachmentId: string;

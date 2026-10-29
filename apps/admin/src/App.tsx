@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import type { AdminRole, FeatureFlag, AdminAuditEvent } from '@niz/shared-types';
 
-const ADMIN_API_BASE = 'http://localhost:4000';
+const ADMIN_API_BASE =
+  import.meta.env.VITE_ADMIN_API_BASE ||
+  (typeof window !== 'undefined' && window.location.port === '5174'
+    ? 'http://localhost:4000'
+    : typeof window !== 'undefined'
+    ? window.location.origin
+    : 'http://localhost:4000');
 
 export const App: React.FC = () => {
   const [token, setToken] = useState<string | null>(null);
@@ -9,10 +15,11 @@ export const App: React.FC = () => {
   const [currentRoles, setCurrentRoles] = useState<AdminRole[]>([]);
   const [activeTab, setActiveTab] = useState<'metrics' | 'flags' | 'audit'>('metrics');
 
-  // Login form state
-  const [loginUser, setLoginUser] = useState<string>('superadmin');
-  const [loginPass, setLoginPass] = useState<string>('dev_admin_super_secret_123');
-  const [loginMfa, setLoginMfa] = useState<string>('123456');
+  // Login form state (prefilled in DEV only; blank in production builds)
+  const isDev = import.meta.env.DEV;
+  const [loginUser, setLoginUser] = useState<string>(isDev ? 'superadmin' : '');
+  const [loginPass, setLoginPass] = useState<string>(isDev ? 'dev_admin_super_secret_123' : '');
+  const [loginMfa, setLoginMfa] = useState<string>(isDev ? '123456' : '');
   const [loginError, setLoginError] = useState<string | null>(null);
 
   // Admin Data state
