@@ -15,7 +15,7 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: node apps/server/dist/index.js
     envVars:
       - key: NODE_ENV
@@ -38,7 +38,7 @@ services:
   - type: web
     name: niz-web
     runtime: static
-    buildCommand: npm ci && npm run build --workspace=@niz/shared-types && npm run build --workspace=@niz/validation && npm run build --workspace=@niz/crypto-core && npm run build --workspace=@niz/ui && npm run build --workspace=@niz/web
+    buildCommand: npm ci --include=dev && npm run build --workspace=@niz/shared-types && npm run build --workspace=@niz/validation && npm run build --workspace=@niz/crypto-core && npm run build --workspace=@niz/ui && npm run build --workspace=@niz/web
     staticPublishPath: apps/web/dist
     routes:
       - type: rewrite
@@ -49,7 +49,7 @@ services:
   - type: web
     name: niz-admin
     runtime: static
-    buildCommand: npm ci && npm run build --workspace=@niz/shared-types && npm run build --workspace=@niz/validation && npm run build --workspace=@niz/ui && npm run build --workspace=@niz/admin
+    buildCommand: npm ci --include=dev && npm run build --workspace=@niz/shared-types && npm run build --workspace=@niz/validation && npm run build --workspace=@niz/ui && npm run build --workspace=@niz/admin
     staticPublishPath: apps/admin/dist
     routes:
       - type: rewrite

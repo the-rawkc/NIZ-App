@@ -14,10 +14,8 @@
     "lint": "node -e \"console.log('Linting: all files adhere to strict TypeScript formatting')\"",
     "clean": "npm run clean --workspaces --if-present"
   },
-  "devDependencies": {
-    "typescript": "^5.5.4"
-  },
   "dependencies": {
-    "libsodium-wrappers-sumo": "^0.8.4"
+    "libsodium-wrappers-sumo": "^0.8.4",
+    "typescript": "^5.5.4"
   }
 }
