@@ -40,6 +40,11 @@ services:
     runtime: static
     buildCommand: npm ci --include=dev && npm run build --workspace=@niz/shared-types && npm run build --workspace=@niz/validation && npm run build --workspace=@niz/crypto-core && npm run build --workspace=@niz/ui && npm run build --workspace=@niz/web
     staticPublishPath: apps/web/dist
+    envVars:
+      - key: VITE_API_BASE
+        value: https://niz-server.onrender.com
+      - key: VITE_WS_BASE
+        value: wss://niz-server.onrender.com
     routes:
       - type: rewrite
         source: /*
@@ -51,6 +56,9 @@ services:
     runtime: static
     buildCommand: npm ci --include=dev && npm run build --workspace=@niz/shared-types && npm run build --workspace=@niz/validation && npm run build --workspace=@niz/ui && npm run build --workspace=@niz/admin
     staticPublishPath: apps/admin/dist
+    envVars:
+      - key: VITE_ADMIN_API_BASE
+        value: https://niz-server.onrender.com
     routes:
       - type: rewrite
         source: /*
