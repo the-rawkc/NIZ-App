@@ -15,7 +15,7 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm ci --include=dev && npm run build
+    buildCommand: npm ci --include=dev && npm run build --workspace=@niz/shared-types && npm run build --workspace=@niz/validation && npm run build --workspace=@niz/crypto-core && npm run build --workspace=@niz/server
     startCommand: node apps/server/dist/index.js
     envVars:
       - key: NODE_ENV

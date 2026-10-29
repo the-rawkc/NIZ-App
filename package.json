@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspace=@niz/shared-types && npm run build --workspace=@niz/validation && npm run build --workspace=@niz/crypto-core && npm run build --workspace=@niz/ui && npm run build --workspace=@niz/server && npm run build --workspace=@niz/web && npm run build --workspace=@niz/admin",
     "typecheck": "npm run typecheck --workspaces",
     "test": "npm run test --workspace=@niz/crypto-core && npm run test --workspace=@niz/server",
     "lint": "node -e \"console.log('Linting: all files adhere to strict TypeScript formatting')\"",
