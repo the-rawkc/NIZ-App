@@ -28,12 +28,27 @@ export class PostgresStorageAdapter implements IStorageAdapter {
     if (poolOrConfig && typeof poolOrConfig === 'object' && 'query' in poolOrConfig) {
       this.pool = poolOrConfig as pg.Pool;
     } else if (typeof poolOrConfig === 'string') {
-      this.pool = new Pool({ connectionString: poolOrConfig });
+      const useSsl =
+        !poolOrConfig.includes('localhost') && !poolOrConfig.includes('127.0.0.1');
+      this.pool = new Pool({
+        connectionString: poolOrConfig,
+        ssl: useSsl ? { rejectUnauthorized: false } : undefined,
+      });
     } else if (poolOrConfig) {
       this.pool = new Pool(poolOrConfig as pg.PoolConfig);
     } else {
+      const connStr =
+        process.env.DATABASE_URL ||
+        'postgresql://niz_admin:niz_dev_secret_change_in_prod@localhost:5432/niz_chat';
+      const useSsl =
+        process.env.DATABASE_SSL === 'true' ||
+        (!!process.env.DATABASE_URL &&
+          !process.env.DATABASE_URL.includes('localhost') &&
+          !process.env.DATABASE_URL.includes('127.0.0.1'));
+
       this.pool = new Pool({
-        connectionString: process.env.DATABASE_URL || 'postgresql://niz_admin:niz_dev_secret_change_in_prod@localhost:5432/niz_chat',
+        connectionString: connStr,
+        ssl: useSsl ? { rejectUnauthorized: false } : undefined,
       });
     }
   }

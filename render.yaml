@@ -15,13 +15,15 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm ci && npm run build --workspace=@niz/shared-types && npm run build --workspace=@niz/validation && npm run build --workspace=@niz/server
-    startCommand: npm run start --workspace=@niz/server
+    buildCommand: npm ci && npm run build
+    startCommand: node apps/server/dist/index.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      - key: HOST
+        value: 0.0.0.0
       - key: STORAGE_ADAPTER
         value: postgres
       - key: DATABASE_URL
