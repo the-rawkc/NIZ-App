@@ -1068,24 +1068,10 @@ export const App: React.FC = () => {
   }, [activeTab, identity]);
 
   return (
-    <div style={{ maxWidth: '960px', margin: '0 auto', padding: '36px 20px', width: '100%' }}>
-      {/* Toast Notification */}
+    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '36px 20px', width: '100%' }}>
+      {/* Dynamic Animated Toast Notification */}
       {notification && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '20px',
-            right: '20px',
-            backgroundColor: '#10B981',
-            color: '#090D14',
-            padding: '12px 20px',
-            borderRadius: '8px',
-            fontWeight: 600,
-            fontSize: '0.88rem',
-            zIndex: 9999,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-          }}
-        >
+        <div className="toast-notice">
           {notification}
         </div>
       )}
@@ -1097,152 +1083,209 @@ export const App: React.FC = () => {
           alignItems: 'center',
           justifyContent: 'space-between',
           marginBottom: '32px',
-          paddingBottom: '20px',
+          paddingBottom: '22px',
           borderBottom: '1px solid var(--color-border)',
+          flexWrap: 'wrap',
+          gap: '16px',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <NizLogo size={48} />
+          <div className="floating-icon">
+            <NizLogo size={50} />
+          </div>
           <div>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
-              NIZ Chat
-            </h1>
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
-              Privacy-first, QR-connected messaging
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h1 style={{ fontSize: '1.65rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#F8FAFC' }}>
+                NIZ Chat
+              </h1>
+              <span className="badge">E2EE v1.0</span>
+            </div>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.86rem', marginTop: '3px' }}>
+              Privacy-first, QR-connected messaging · Zero plaintext on server
             </p>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span className="badge">Phase 4: Encrypted Text MVP</span>
+
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {identity && (
-            <span
+            <div
               style={{
-                fontSize: '0.75rem',
-                padding: '4px 8px',
-                borderRadius: '6px',
-                backgroundColor: isWsConnected ? '#064E3B' : '#7F1D1D',
-                color: isWsConnected ? '#34D399' : '#F87171',
-                border: '1px solid',
-                borderColor: isWsConnected ? '#10B981' : '#EF4444',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 14px',
+                borderRadius: '9999px',
+                background: 'rgba(15, 23, 42, 0.8)',
+                border: '1px solid var(--color-border)',
+                fontSize: '0.78rem',
+                fontFamily: 'monospace',
+                color: '#94A3B8',
               }}
+              title={identity.publicId}
             >
-              {isWsConnected ? '● Live Push' : '○ Offline'}
-            </span>
+              <span style={{ color: '#10B981', fontWeight: 700 }}>ID:</span>
+              <span>{identity.publicId.slice(0, 16)}...</span>
+            </div>
           )}
+
+          <div
+            style={{
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              padding: '6px 12px',
+              borderRadius: '9999px',
+              backgroundColor: isWsConnected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+              color: isWsConnected ? '#34D399' : '#F87171',
+              border: '1px solid',
+              borderColor: isWsConnected ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            {isWsConnected ? <span className="live-beacon" /> : <span className="offline-beacon" />}
+            {isWsConnected ? 'Live Push Active' : 'Offline Reconnecting'}
+          </div>
         </div>
       </header>
 
-      {/* Tabs */}
-      <nav style={{ display: 'flex', gap: '10px', marginBottom: '28px', flexWrap: 'wrap' }}>
+      {/* Modern Navigation Tabs */}
+      <nav className="nav-tab-container">
         <button
           onClick={() => setActiveTab('identity')}
-          className={activeTab === 'identity' ? 'btn-primary' : 'btn-secondary'}
+          className={`nav-tab-btn ${activeTab === 'identity' ? 'active' : ''}`}
         >
-          My Identity & QR
+          🛡️ My Identity & QR
         </button>
         <button
           onClick={() => setActiveTab('invite')}
-          className={activeTab === 'invite' ? 'btn-primary' : 'btn-secondary'}
+          className={`nav-tab-btn ${activeTab === 'invite' ? 'active' : ''}`}
         >
-          Invite Someone (Expiring)
+          ⏳ Expiring Invite
         </button>
         <button
           onClick={() => setActiveTab('connect')}
-          className={activeTab === 'connect' ? 'btn-primary' : 'btn-secondary'}
+          className={`nav-tab-btn ${activeTab === 'connect' ? 'active' : ''}`}
         >
-          Scan / Connect
+          📡 Scan / Connect
         </button>
         <button
           onClick={() => setActiveTab('requests')}
-          className={activeTab === 'requests' ? 'btn-primary' : 'btn-secondary'}
+          className={`nav-tab-btn ${activeTab === 'requests' ? 'active' : ''}`}
         >
-          Incoming Requests
+          📬 Requests {pendingRequests.length > 0 && <span style={{ background: '#10B981', color: '#06090E', padding: '2px 6px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 800 }}>{pendingRequests.length}</span>}
         </button>
         <button
           onClick={() => setActiveTab('contacts')}
-          className={activeTab === 'contacts' ? 'btn-primary' : 'btn-secondary'}
+          className={`nav-tab-btn ${activeTab === 'contacts' ? 'active' : ''}`}
         >
-          Contacts & Safety
+          👥 Contacts & Safety
         </button>
         <button
           onClick={() => setActiveTab('chat')}
-          className={activeTab === 'chat' ? 'btn-primary' : 'btn-secondary'}
+          className={`nav-tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
         >
-          Encrypted Chat
+          💬 Encrypted Chat
         </button>
         <button
           onClick={() => setActiveTab('plans')}
-          className={activeTab === 'plans' ? 'btn-primary' : 'btn-secondary'}
+          className={`nav-tab-btn ${activeTab === 'plans' ? 'active' : ''}`}
         >
-          Plans & Quotas
+          ⚡ Plans & Quotas
         </button>
       </nav>
 
       {/* Tab 1: Identity & Permanent QR */}
       {activeTab === 'identity' && (
-        <section className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ fontSize: '1.25rem' }}>Your Cryptographic Identity</h2>
+        <section className="card card-cyber animate-fade-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#F8FAFC' }}>
+                Your Cryptographic Identity
+              </h2>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.84rem', marginTop: '2px' }}>
+                Locally-held Ed25519 signing keys and X25519 prekeys
+              </p>
+            </div>
             <button
               onClick={handleGenerateIdentity}
               disabled={isGenerating}
               className="btn-primary"
             >
-              {identity ? 'Rotate / Re-generate Keys' : 'Create Identity'}
+              {isGenerating ? 'Generating Keys...' : identity ? '🔄 Rotate / Re-generate Keys' : '✨ Create Identity'}
             </button>
           </div>
 
           {!identity ? (
-            <p style={{ color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-              No identity found in client memory. Click <strong>Create Identity</strong> to securely
-              generate an Ed25519 identity keypair and X25519 prekey bundle locally. Your private keys
-              will never be sent to the server.
-            </p>
+            <div style={{ padding: '36px 20px', textAlign: 'center', background: 'rgba(10, 15, 26, 0.6)', borderRadius: '14px', border: '1px dashed var(--color-border)' }}>
+              <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🔑</div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#F8FAFC', marginBottom: '6px' }}>
+                No Cryptographic Identity Found
+              </h3>
+              <p style={{ color: 'var(--color-text-secondary)', maxWidth: '500px', margin: '0 auto 18px', fontSize: '0.86rem', lineHeight: 1.6 }}>
+                Click <strong>Create Identity</strong> to securely generate an Ed25519 identity keypair and X25519 prekey bundle in client memory. Your private keys never leave this device.
+              </p>
+              <button onClick={handleGenerateIdentity} disabled={isGenerating} className="btn-primary">
+                ✨ Generate Cryptographic Identity
+              </button>
+            </div>
           ) : (
-            <div style={{ display: 'flex', gap: '28px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
               {permanentQrDataUrl && (
                 <div style={{ textAlign: 'center' }}>
-                  <div
-                    style={{
-                      background: '#090D14',
-                      padding: '12px',
-                      borderRadius: '12px',
-                      border: '1px solid var(--color-border)',
-                      display: 'inline-block',
-                    }}
-                  >
-                    <img src={permanentQrDataUrl} alt="Permanent Identity QR" style={{ width: '200px', height: '200px', display: 'block' }} />
+                  <div className="cyber-qr-wrapper">
+                    <img src={permanentQrDataUrl} alt="Permanent Identity QR" style={{ width: '210px', height: '210px', display: 'block', borderRadius: '8px' }} />
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--color-primary)', marginTop: '8px', fontWeight: 600 }}>
+                  <div style={{ fontSize: '0.78rem', color: '#10B981', marginTop: '10px', fontWeight: 700 }}>
                     Permanent Identity QR
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '10px' }}>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(identity.publicId);
+                        showNotification('Public Identity ID copied!');
+                      }}
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                    >
+                      Copy ID
+                    </button>
+                    <a
+                      href={permanentQrDataUrl}
+                      download={`niz_identity_${identity.publicId.slice(0, 12)}.png`}
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: '0.75rem', textDecoration: 'none' }}
+                    >
+                      Save PNG
+                    </a>
                   </div>
                 </div>
               )}
 
               <div style={{ flex: 1, minWidth: '280px' }}>
-                <div style={{ marginBottom: '14px' }}>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     Public Identity ID
                   </label>
-                  <div style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: '#F9FAFB', background: '#090D14', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--color-border)', wordBreak: 'break-all', marginTop: '4px' }}>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.88rem', color: '#F8FAFC', background: 'rgba(10, 15, 26, 0.85)', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', wordBreak: 'break-all', marginTop: '6px' }}>
                     {identity.publicId}
                   </div>
                 </div>
 
-                <div style={{ marginBottom: '14px' }}>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     Individual Safety Fingerprint
                   </label>
-                  <div style={{ fontFamily: 'monospace', fontSize: '0.95rem', color: 'var(--color-primary)', background: '#090D14', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--color-border)', letterSpacing: '0.05em', marginTop: '4px' }}>
+                  <div style={{ fontFamily: 'monospace', fontSize: '1.05rem', fontWeight: 700, color: '#34D399', background: 'rgba(10, 15, 26, 0.85)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)', letterSpacing: '0.06em', marginTop: '6px' }}>
                     {identity.safetyFingerprint}
                   </div>
                 </div>
 
-                <div style={{ backgroundColor: '#090D14', padding: '14px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
-                  <div style={{ fontSize: '0.8rem', color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>
-                    🔒 Safe Sharing Invariant
+                <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.08)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                  <div style={{ fontSize: '0.82rem', color: '#34D399', fontWeight: 700, marginBottom: '4px' }}>
+                    🔒 Zero-Knowledge Safe Sharing Invariant
                   </div>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                  <p style={{ fontSize: '0.78rem', color: '#94A3B8', lineHeight: 1.5 }}>
                     This QR code carries strictly your public identifier and verification fingerprint. It contains zero private keys, passwords, or bearer tokens. Anyone who scans it can only send you a connection request, which you must explicitly approve before messaging begins.
                   </p>
                 </div>
@@ -1252,86 +1295,91 @@ export const App: React.FC = () => {
 
           {identity && (
             <>
-              {/* Linked Devices Section (Phase 7) */}
-              <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--color-border)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                  <h3 style={{ fontSize: '1.1rem', color: '#F9FAFB' }}>Linked Devices</h3>
-                  <button onClick={fetchDevices} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
-                    ↻ Refresh Devices
+              {/* Linked Devices Section */}
+              <div style={{ marginTop: '36px', paddingTop: '28px', borderTop: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#F8FAFC' }}>Linked Devices</h3>
+                    <p style={{ fontSize: '0.8rem', color: '#94A3B8' }}>Active sessions registered to your public identity</p>
+                  </div>
+                  <button onClick={fetchDevices} className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem' }}>
+                    🔄 Refresh Devices
                   </button>
                 </div>
-                {devices.length === 0 ? (
-                  <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>No other devices linked.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {devices.map((d) => (
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {devices.length === 0 ? (
+                    <div style={{ color: '#64748B', fontSize: '0.84rem' }}>Loading active devices...</div>
+                  ) : (
+                    devices.map((d) => (
                       <div
                         key={d.deviceId}
                         style={{
+                          background: 'rgba(10, 15, 26, 0.75)',
+                          padding: '14px 18px',
+                          borderRadius: '10px',
+                          border: d.deviceId === identity.deviceId ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--color-border)',
                           display: 'flex',
-                          alignItems: 'center',
                           justifyContent: 'space-between',
-                          padding: '12px 16px',
-                          background: '#090D14',
-                          borderRadius: '8px',
-                          border: '1px solid var(--color-border)',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: '12px',
                         }}
                       >
                         <div>
-                          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#F9FAFB' }}>
-                            {d.deviceName || 'Client Device'}{' '}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: 600, color: '#F8FAFC', fontSize: '0.9rem' }}>
+                              {d.deviceName || 'NIZ Device'}
+                            </span>
                             {d.deviceId === identity.deviceId && (
-                              <span style={{ fontSize: '0.75rem', color: '#10B981', fontWeight: 500 }}>(This Device)</span>
+                              <span className="badge badge-live">Current Device</span>
                             )}
                           </div>
-                          <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
-                            ID: {d.deviceId} · Registered: {new Date(d.createdAt).toLocaleDateString()}
+                          <div style={{ fontFamily: 'monospace', fontSize: '0.76rem', color: '#64748B', marginTop: '4px' }}>
+                            Device ID: {d.deviceId}
                           </div>
-                          {d.revokedAt && (
-                            <span style={{ fontSize: '0.72rem', color: '#EF4444', fontWeight: 600 }}>
-                              Revoked at {new Date(d.revokedAt).toLocaleTimeString()}
-                            </span>
-                          )}
                         </div>
-                        {d.deviceId !== identity.deviceId && !d.revokedAt && (
+
+                        {d.deviceId !== identity.deviceId && (
                           <button
                             onClick={() => handleRevokeDevice(d.deviceId)}
-                            className="btn-secondary"
-                            style={{ color: '#EF4444', borderColor: '#7F1D1D', padding: '6px 12px', fontSize: '0.8rem' }}
+                            className="btn-danger"
                           >
                             Revoke Device
                           </button>
                         )}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    ))
+                  )}
+                </div>
               </div>
 
-              {/* Zero-Knowledge Encrypted Backup & Secure Recovery (Phase 7) */}
-              <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--color-border)' }}>
-                <h3 style={{ fontSize: '1.1rem', color: '#F9FAFB', marginBottom: '8px' }}>
-                  Encrypted Backup & Recovery (Argon2id + XChaCha20-Poly1305)
-                </h3>
-                <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', lineHeight: 1.6, marginBottom: '20px' }}>
-                  Create an encrypted, password-protected recovery vault for your identity and contacts. The server never sees your passphrase or unencrypted backup keys.
-                </p>
+              {/* Zero-Knowledge Encrypted Backup Section */}
+              <div style={{ marginTop: '36px', paddingTop: '28px', borderTop: '1px solid var(--color-border)' }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#F8FAFC' }}>
+                    Zero-Knowledge Encrypted Backup Vault
+                  </h3>
+                  <p style={{ fontSize: '0.82rem', color: '#94A3B8' }}>
+                    Argon2id (64MB) + XChaCha20-Poly1305 client-side encrypted backup vault
+                  </p>
+                </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-                  {/* Export Backup Vault */}
-                  <div style={{ background: '#090D14', padding: '16px', borderRadius: '10px', border: '1px solid var(--color-border)' }}>
-                    <h4 style={{ fontSize: '0.95rem', color: '#10B981', marginBottom: '10px' }}>
-                      Export Encrypted Vault
+                  {/* Export Card */}
+                  <div style={{ background: 'rgba(10, 15, 26, 0.75)', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: '#34D399', marginBottom: '6px' }}>
+                      📦 Export Encrypted Vault
                     </h4>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
-                      Derives an encryption key via Argon2id. Generates a <code>.nizvault</code> file.
+                    <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: '14px', lineHeight: 1.5 }}>
+                      Derives an authenticated key via Argon2id. Server only receives ciphertext.
                     </p>
                     <input
                       type="password"
-                      placeholder="Passphrase (min 8 chars)"
+                      placeholder="Passphrase (min 8 characters)"
                       value={backupPassphrase}
                       onChange={(e) => setBackupPassphrase(e.target.value)}
-                      style={{ width: '100%', padding: '10px', background: '#111827', border: '1px solid var(--color-border)', borderRadius: '6px', color: '#F9FAFB', marginBottom: '12px' }}
+                      style={{ marginBottom: '12px' }}
                     />
                     <button
                       onClick={handleExportBackup}
@@ -1339,24 +1387,24 @@ export const App: React.FC = () => {
                       className="btn-primary"
                       style={{ width: '100%', padding: '10px' }}
                     >
-                      {isExportingBackup ? 'Deriving Argon2id...' : '🔒 Export & Sync Vault'}
+                      {isExportingBackup ? 'Encrypting with Argon2id...' : '🔒 Create & Download Vault'}
                     </button>
                   </div>
 
-                  {/* Restore Backup Vault */}
-                  <div style={{ background: '#090D14', padding: '16px', borderRadius: '10px', border: '1px solid var(--color-border)' }}>
-                    <h4 style={{ fontSize: '0.95rem', color: '#38BDF8', marginBottom: '10px' }}>
-                      Restore from Backup Vault
+                  {/* Restore Card */}
+                  <div style={{ background: 'rgba(10, 15, 26, 0.75)', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: '#38BDF8', marginBottom: '6px' }}>
+                      🔓 Restore From Vault File
                     </h4>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
-                      Enter your vault passphrase and select your <code>.nizvault</code> file.
+                    <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: '14px', lineHeight: 1.5 }}>
+                      Decrypt your client identity from a saved <code>.nizvault</code> archive.
                     </p>
                     <input
                       type="password"
                       placeholder="Vault Passphrase"
                       value={restorePassphrase}
                       onChange={(e) => setRestorePassphrase(e.target.value)}
-                      style={{ width: '100%', padding: '10px', background: '#111827', border: '1px solid var(--color-border)', borderRadius: '6px', color: '#F9FAFB', marginBottom: '12px' }}
+                      style={{ marginBottom: '12px' }}
                     />
                     <input
                       type="file"
@@ -1383,21 +1431,22 @@ export const App: React.FC = () => {
 
       {/* Tab 2: Ephemeral Invitation QR */}
       {activeTab === 'invite' && (
-        <section className="card">
-          <h2 style={{ fontSize: '1.25rem', marginBottom: '12px' }}>Create Ephemeral Invitation</h2>
-          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', marginBottom: '20px', lineHeight: 1.6 }}>
+        <section className="card card-cyber animate-fade-in">
+          <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#F8FAFC', marginBottom: '8px' }}>
+            Create Ephemeral Invitation
+          </h2>
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.86rem', marginBottom: '24px', lineHeight: 1.6 }}>
             Temporary invitations generate a short-lived, high-entropy cryptographic token that can expire, be revoked on demand, and be restricted to single-use redemption.
           </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '24px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
                 Expiration Lifespan
               </label>
               <select
                 value={inviteDuration}
                 onChange={(e) => setInviteDuration(Number(e.target.value))}
-                style={{ width: '100%', padding: '10px', background: '#090D14', color: '#F9FAFB', border: '1px solid var(--color-border)', borderRadius: '8px' }}
               >
                 <option value={900}>15 Minutes</option>
                 <option value={3600}>1 Hour</option>
@@ -1405,37 +1454,53 @@ export const App: React.FC = () => {
               </select>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingTop: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingTop: '28px' }}>
               <input
                 type="checkbox"
                 id="singleUse"
                 checked={inviteSingleUse}
                 onChange={(e) => setInviteSingleUse(e.target.checked)}
-                style={{ width: '18px', height: '18px', accentColor: '#10B981' }}
+                style={{ width: '18px', height: '18px', accentColor: '#10B981', cursor: 'pointer' }}
               />
-              <label htmlFor="singleUse" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>
+              <label htmlFor="singleUse" style={{ fontSize: '0.88rem', fontWeight: 500, cursor: 'pointer', color: '#F8FAFC' }}>
                 Single-Use (burns token after first scan)
               </label>
             </div>
           </div>
 
           <button onClick={handleCreateInvitation} className="btn-primary" style={{ marginBottom: '24px' }}>
-            Generate Temporary Invitation
+            ✨ Generate Temporary Invitation
           </button>
 
           {activeInvite && (
-            <div style={{ background: '#090D14', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <img src={activeInvite.qrDataUrl} alt="Invitation QR" style={{ width: '180px', height: '180px', borderRadius: '8px' }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ color: '#34D399', fontWeight: 600, fontSize: '0.9rem' }}>
-                  Active Temporary Invitation
+            <div className="animate-pop-in" style={{ background: 'rgba(10, 15, 26, 0.85)', padding: '24px', borderRadius: '14px', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'flex', gap: '28px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="cyber-qr-wrapper">
+                <img src={activeInvite.qrDataUrl} alt="Invitation QR" style={{ width: '190px', height: '190px', display: 'block', borderRadius: '8px' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: '240px' }}>
+                <div style={{ color: '#34D399', fontWeight: 700, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="live-beacon" /> Active Ephemeral Invitation
                 </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                  Expires at: {new Date(activeInvite.expiresAt).toLocaleTimeString()} · {activeInvite.isSingleUse ? 'Single-Use' : 'Multi-Use'}
+                <div style={{ fontSize: '0.84rem', color: 'var(--color-text-secondary)', marginTop: '8px', lineHeight: 1.5 }}>
+                  Expires at: <strong>{new Date(activeInvite.expiresAt).toLocaleTimeString()}</strong> · {activeInvite.isSingleUse ? 'Single-Use' : 'Multi-Use'}
                 </div>
-                <div style={{ marginTop: '16px' }}>
-                  <button onClick={handleRevokeInvitation} className="btn-secondary" style={{ color: '#EF4444', borderColor: '#EF4444' }}>
-                    Revoke Invitation Immediately
+                <div style={{ marginTop: '20px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`niz:invite:${activeInvite.token}`);
+                      showNotification('Invitation token copied!');
+                    }}
+                    className="btn-primary"
+                    style={{ fontSize: '0.82rem', padding: '8px 16px' }}
+                  >
+                    📋 Copy Invite Token
+                  </button>
+                  <button
+                    onClick={handleRevokeInvitation}
+                    className="btn-danger"
+                    style={{ fontSize: '0.82rem', padding: '8px 16px' }}
+                  >
+                    Revoke Now
                   </button>
                 </div>
               </div>
@@ -1446,64 +1511,70 @@ export const App: React.FC = () => {
 
       {/* Tab 3: Scan / Connect with Preview & Consent */}
       {activeTab === 'connect' && (
-        <section className="card">
-          <h2 style={{ fontSize: '1.25rem', marginBottom: '12px' }}>Scan or Enter QR Code</h2>
-          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', marginBottom: '20px', lineHeight: 1.6 }}>
-            Paste a NIZ QR URI (e.g. <code>niz:id:...</code> or <code>niz:invite:...</code>) to inspect and verify the counterpart before initiating a connection.
+        <section className="card card-cyber animate-fade-in">
+          <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#F8FAFC', marginBottom: '8px' }}>
+            Scan or Enter Counterpart URI
+          </h2>
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.86rem', marginBottom: '24px', lineHeight: 1.6 }}>
+            Paste a NIZ QR URI (e.g. <code>niz:id:...</code> or <code>niz:invite:...</code>) to inspect and verify cryptographic credentials before establishing an encrypted channel.
           </p>
 
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-            <input
-              type="text"
-              placeholder="Paste niz:id:... or niz:invite:... URI here"
-              value={inputQrPayload}
-              onChange={(e) => setInputQrPayload(e.target.value)}
-              style={{ flex: 1, padding: '10px 14px', background: '#090D14', border: '1px solid var(--color-border)', borderRadius: '8px', color: '#F9FAFB', fontFamily: 'monospace', fontSize: '0.85rem' }}
-            />
-            <button onClick={handleParseQr} className="btn-secondary">
-              Inspect & Preview
-            </button>
+          <div style={{ position: 'relative', marginBottom: '20px' }}>
+            {/* Animated Laser Scanline effect over scanner input */}
+            <div className="scan-line" />
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                placeholder="Paste niz:id:... or niz:invite:... URI here"
+                value={inputQrPayload}
+                onChange={(e) => setInputQrPayload(e.target.value)}
+                style={{ flex: 1, minWidth: '260px', fontFamily: 'monospace', fontSize: '0.88rem' }}
+              />
+              <button onClick={handleParseQr} className="btn-secondary" style={{ padding: '0 20px' }}>
+                🔍 Inspect & Preview
+              </button>
+            </div>
           </div>
 
           {connectStatus && (
-            <div style={{ padding: '12px', borderRadius: '8px', background: '#090D14', border: '1px solid var(--color-border)', color: '#34D399', fontSize: '0.85rem', marginBottom: '16px' }}>
-              {connectStatus}
+            <div className="animate-pop-in" style={{ padding: '14px 18px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#34D399', fontSize: '0.88rem', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span>✓</span> {connectStatus}
             </div>
           )}
 
           {parsedPreview && (
-            <div style={{ background: '#090D14', padding: '20px', borderRadius: '12px', border: '1px solid var(--color-border)', marginTop: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ fontSize: '1rem', color: '#10B981' }}>
-                  {parsedPreview.type === 'permanent_identity' ? 'Permanent Identity Preview' : 'Ephemeral Invitation Preview'}
+            <div className="animate-fade-in" style={{ background: 'rgba(10, 15, 26, 0.85)', padding: '24px', borderRadius: '14px', border: '1px solid rgba(16, 185, 129, 0.35)', marginTop: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#10B981' }}>
+                  {parsedPreview.type === 'permanent_identity' ? 'Verified Permanent Identity' : 'Verified Temporary Invitation'}
                 </h3>
                 <span className="badge">Pre-Connection Verification</span>
               </div>
 
-              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+              <div style={{ fontSize: '0.82rem', color: '#94A3B8', marginBottom: '4px' }}>
                 Target Public ID:
               </div>
-              <div style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: '#F9FAFB', marginBottom: '12px', wordBreak: 'break-all' }}>
+              <div style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#F8FAFC', background: '#06090E', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', marginBottom: '16px', wordBreak: 'break-all' }}>
                 {parsedPreview.type === 'permanent_identity' ? parsedPreview.publicId : parsedPreview.creatorPublicId}
               </div>
 
               {parsedPreview.type === 'permanent_identity' && (
                 <>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '0.82rem', color: '#94A3B8', marginBottom: '4px' }}>
                     Safety Fingerprint:
                   </div>
-                  <div style={{ fontFamily: 'monospace', fontSize: '0.95rem', color: 'var(--color-primary)', marginBottom: '16px' }}>
+                  <div style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 700, color: '#34D399', background: '#06090E', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)', marginBottom: '18px' }}>
                     {parsedPreview.fingerprint}
                   </div>
                 </>
               )}
 
-              <div style={{ fontSize: '0.8rem', color: '#9CA3AF', marginBottom: '16px', lineHeight: 1.5 }}>
+              <div style={{ fontSize: '0.82rem', color: '#94A3B8', marginBottom: '20px', lineHeight: 1.5 }}>
                 Consent Note: Sending a request will notify the recipient. They will see your public identifier and must explicitly approve the request before you can exchange encrypted messages.
               </div>
 
-              <button onClick={handleSendConnectionRequest} className="btn-primary">
-                Send Connection Request
+              <button onClick={handleSendConnectionRequest} className="btn-primary" style={{ padding: '12px 24px' }}>
+                🚀 Send Connection Request
               </button>
             </div>
           )}
@@ -1512,66 +1583,77 @@ export const App: React.FC = () => {
 
       {/* Tab 4: Incoming Requests */}
       {activeTab === 'requests' && (
-        <section className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ fontSize: '1.25rem' }}>Incoming Connection Requests</h2>
-            <button onClick={fetchPendingRequests} className="btn-secondary" style={{ fontSize: '0.8rem' }}>
-              Refresh
+        <section className="card card-cyber animate-fade-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#F8FAFC' }}>
+                Incoming Connection Requests
+              </h2>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.84rem' }}>
+                Explicit user consent required before key exchange
+              </p>
+            </div>
+            <button onClick={fetchPendingRequests} className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem' }}>
+              🔄 Refresh
             </button>
           </div>
 
           {pendingRequests.length === 0 ? (
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
-              No pending connection requests. When an unknown user scans your QR, their connection request will appear here for your explicit approval.
-            </p>
+            <div style={{ padding: '40px 20px', textAlign: 'center', background: 'rgba(10, 15, 26, 0.5)', borderRadius: '12px', border: '1px dashed var(--color-border)' }}>
+              <div style={{ fontSize: '2.5rem', marginBottom: '10px' }}>📡</div>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.88rem' }}>
+                No pending requests. When someone scans your QR code, their connection request will appear here for your explicit approval.
+              </p>
+            </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               {pendingRequests.map((req) => (
                 <div
                   key={req.id}
+                  className="animate-pop-in"
                   style={{
-                    background: '#090D14',
-                    padding: '16px',
-                    borderRadius: '10px',
+                    background: 'rgba(10, 15, 26, 0.85)',
+                    padding: '18px 20px',
+                    borderRadius: '12px',
                     border: '1px solid var(--color-border)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     flexWrap: 'wrap',
-                    gap: '12px',
+                    gap: '16px',
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
-                      Request from:
+                    <div style={{ fontSize: '0.78rem', color: '#94A3B8' }}>
+                      Connection Request From:
                     </div>
-                    <div style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: '#F9FAFB' }}>
+                    <div style={{ fontFamily: 'monospace', fontSize: '0.92rem', color: '#F8FAFC', fontWeight: 600, marginTop: '2px' }}>
                       {req.senderPublicId}
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: '#6B7280', marginTop: '4px' }}>
+                    <div style={{ fontSize: '0.76rem', color: '#64748B', marginTop: '4px' }}>
                       Received: {new Date(req.createdAt).toLocaleTimeString()}
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '10px' }}>
                     <button
                       onClick={() => handleDecision(req.id, 'approve')}
                       className="btn-primary"
-                      style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                      style={{ padding: '8px 18px', fontSize: '0.82rem' }}
                     >
-                      Approve
+                      ✓ Approve
                     </button>
                     <button
                       onClick={() => handleDecision(req.id, 'decline')}
                       className="btn-secondary"
-                      style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                      style={{ padding: '8px 18px', fontSize: '0.82rem' }}
                     >
                       Decline
                     </button>
                     <button
                       onClick={() => handleDecision(req.id, 'block')}
-                      className="btn-secondary"
-                      style={{ padding: '6px 14px', fontSize: '0.8rem', color: '#EF4444' }}
+                      className="btn-danger"
+                      style={{ padding: '8px 18px', fontSize: '0.82rem' }}
                     >
                       Block
                     </button>
@@ -1585,18 +1667,28 @@ export const App: React.FC = () => {
 
       {/* Tab 5: Contacts, Verification & Safety */}
       {activeTab === 'contacts' && (
-        <section className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ fontSize: '1.25rem' }}>Contacts & Safety Verification</h2>
-            <button onClick={fetchContacts} className="btn-secondary" style={{ fontSize: '0.8rem' }}>
-              Refresh
+        <section className="card card-cyber animate-fade-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#F8FAFC' }}>
+                Contacts & Safety Verification
+              </h2>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.84rem' }}>
+                Manage approved connections and pairwise safety numbers
+              </p>
+            </div>
+            <button onClick={fetchContacts} className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem' }}>
+              🔄 Refresh
             </button>
           </div>
 
           {contacts.length === 0 ? (
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
-              No contacts yet. Connect with someone via QR to establish an approved end-to-end encrypted channel.
-            </p>
+            <div style={{ padding: '40px 20px', textAlign: 'center', background: 'rgba(10, 15, 26, 0.5)', borderRadius: '12px', border: '1px dashed var(--color-border)' }}>
+              <div style={{ fontSize: '2.5rem', marginBottom: '10px' }}>👥</div>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.88rem' }}>
+                No contacts yet. Connect with someone via QR code to establish an approved end-to-end encrypted channel.
+              </p>
+            </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {contacts.map((c) => {
@@ -1606,55 +1698,56 @@ export const App: React.FC = () => {
                 return (
                   <div
                     key={c.id}
+                    className="animate-pop-in"
                     style={{
-                      background: '#090D14',
-                      padding: '16px',
-                      borderRadius: '10px',
+                      background: 'rgba(10, 15, 26, 0.85)',
+                      padding: '18px 20px',
+                      borderRadius: '12px',
                       border: '1px solid var(--color-border)',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       flexWrap: 'wrap',
-                      gap: '12px',
+                      gap: '14px',
                     }}
                   >
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#F9FAFB' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: '0.92rem', fontWeight: 600, color: '#F8FAFC' }}>
                           {c.counterpartPublicId}
                         </span>
                         {isVerified && (
-                          <span style={{ fontSize: '0.75rem', color: '#10B981', fontWeight: 600 }}>
+                          <span className="badge badge-live">
                             ✓ Verified Safety Number
                           </span>
                         )}
                         {isBlocked && (
-                          <span style={{ fontSize: '0.75rem', color: '#EF4444', fontWeight: 600 }}>
+                          <span style={{ fontSize: '0.74rem', color: '#FDA4AF', fontWeight: 700, background: 'rgba(244, 63, 94, 0.15)', padding: '3px 8px', borderRadius: '6px' }}>
                             Blocked
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                        Status: <strong style={{ textTransform: 'uppercase' }}>{c.state}</strong>
+                      <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '4px' }}>
+                        Status: <strong style={{ color: '#10B981', textTransform: 'uppercase' }}>{c.state}</strong>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '10px' }}>
                       {c.state === 'approved' && (
                         <button
                           onClick={() => handleStartChat(c)}
                           className="btn-primary"
-                          style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                          style={{ padding: '8px 18px', fontSize: '0.82rem' }}
                         >
-                          Chat
+                          💬 Chat
                         </button>
                       )}
                       <button
                         onClick={() => handleSelectContactForVerification(c)}
                         className="btn-secondary"
-                        style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                        style={{ padding: '8px 18px', fontSize: '0.82rem' }}
                       >
-                        Verify & Security
+                        🛡️ Verify & Security
                       </button>
                     </div>
                   </div>
@@ -1666,56 +1759,57 @@ export const App: React.FC = () => {
           {/* Contact Verification Modal */}
           {selectedContact && (
             <div
+              className="animate-fade-in"
               style={{
-                marginTop: '28px',
-                padding: '24px',
-                background: '#090D14',
-                borderRadius: '12px',
-                border: '1px solid #10B981',
+                marginTop: '32px',
+                padding: '28px',
+                background: 'rgba(10, 15, 26, 0.95)',
+                borderRadius: '14px',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ fontSize: '1.1rem', color: '#F9FAFB' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#F8FAFC' }}>
                   Safety Number Verification
                 </h3>
                 <button
                   onClick={() => setSelectedContact(null)}
                   className="btn-secondary"
-                  style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                  style={{ padding: '4px 12px', fontSize: '0.78rem' }}
                 >
-                  Close
+                  ✕ Close
                 </button>
               </div>
 
-              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', lineHeight: 1.6, marginBottom: '16px' }}>
+              <p style={{ color: '#94A3B8', fontSize: '0.86rem', lineHeight: 1.6, marginBottom: '20px' }}>
                 To verify that your end-to-end encrypted channel with{' '}
-                <strong style={{ color: '#F9FAFB' }}>{selectedContact.counterpartPublicId}</strong> is free
-                from any man-in-the-middle, compare the 6-block safety number below out-of-band.
+                <strong style={{ color: '#F8FAFC' }}>{selectedContact.counterpartPublicId}</strong> is authentic and immune to man-in-the-middle attacks, compare the 6-block safety number below out-of-band (in person or over a secure call).
               </p>
 
               <div
                 style={{
-                  background: '#111827',
-                  padding: '16px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--color-border)',
+                  background: '#06090E',
+                  padding: '20px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
                   textAlign: 'center',
-                  marginBottom: '20px',
+                  marginBottom: '24px',
                 }}
               >
-                <div style={{ fontSize: '0.75rem', color: '#9CA3AF', marginBottom: '6px', textTransform: 'uppercase' }}>
-                  Pairwise Safety Number
+                <div style={{ fontSize: '0.76rem', color: '#94A3B8', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
+                  Pairwise Cryptographic Safety Number
                 </div>
-                <div style={{ fontFamily: 'monospace', fontSize: '1.25rem', color: '#10B981', letterSpacing: '0.08em', fontWeight: 700 }}>
+                <div style={{ fontFamily: 'monospace', fontSize: '1.4rem', color: '#10B981', letterSpacing: '0.12em', fontWeight: 800 }}>
                   {pairwiseSafetyNumber || '58291 03847 19284 84930 10293 84729'}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <button
                   onClick={() => handleToggleVerified(selectedContact.id)}
                   className="btn-primary"
-                  style={{ padding: '8px 16px' }}
+                  style={{ padding: '10px 20px' }}
                 >
                   {verifiedContacts.has(selectedContact.id) ? 'Mark as Unverified' : '✓ Mark as Verified'}
                 </button>
@@ -1730,8 +1824,7 @@ export const App: React.FC = () => {
                 ) : (
                   <button
                     onClick={() => handleBlockContact(selectedContact.counterpartPublicId)}
-                    className="btn-secondary"
-                    style={{ color: '#EF4444' }}
+                    className="btn-danger"
                   >
                     Block Contact
                   </button>
@@ -1740,7 +1833,7 @@ export const App: React.FC = () => {
                 <button
                   onClick={() => handleRemoveContact(selectedContact.counterpartPublicId)}
                   className="btn-secondary"
-                  style={{ color: '#EF4444' }}
+                  style={{ color: '#F43F5E' }}
                 >
                   Remove Connection
                 </button>
@@ -1756,15 +1849,15 @@ export const App: React.FC = () => {
 
               {/* Report Abuse Drawer */}
               {showReportDialog && (
-                <div style={{ marginTop: '20px', padding: '16px', borderRadius: '8px', background: '#111827', border: '1px solid #F59E0B' }}>
-                  <h4 style={{ fontSize: '0.95rem', color: '#F59E0B', marginBottom: '8px' }}>
+                <div className="animate-fade-in" style={{ marginTop: '24px', padding: '20px', borderRadius: '12px', background: '#06090E', border: '1px solid #F59E0B' }}>
+                  <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#F59E0B', marginBottom: '10px' }}>
                     Report Abuse (Metadata Minimization Active)
                   </h4>
-                  <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
                     <select
                       value={reportCategory}
                       onChange={(e) => setReportCategory(e.target.value as unknown as typeof reportCategory)}
-                      style={{ padding: '8px', background: '#090D14', color: '#F9FAFB', border: '1px solid var(--color-border)', borderRadius: '6px' }}
+                      style={{ width: 'auto', minWidth: '180px' }}
                     >
                       <option value="spam">Spam / Unsolicited</option>
                       <option value="harassment">Harassment</option>
@@ -1776,14 +1869,14 @@ export const App: React.FC = () => {
                       placeholder="Optional brief description"
                       value={reportReason}
                       onChange={(e) => setReportReason(e.target.value)}
-                      style={{ flex: 1, padding: '8px 12px', background: '#090D14', color: '#F9FAFB', border: '1px solid var(--color-border)', borderRadius: '6px' }}
+                      style={{ flex: 1, minWidth: '220px' }}
                     />
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={handleSubmitReport} className="btn-primary" style={{ padding: '6px 14px' }}>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button onClick={handleSubmitReport} className="btn-primary" style={{ padding: '8px 18px' }}>
                       Submit Report
                     </button>
-                    <button onClick={() => setShowReportDialog(false)} className="btn-secondary" style={{ padding: '6px 14px' }}>
+                    <button onClick={() => setShowReportDialog(false)} className="btn-secondary" style={{ padding: '8px 18px' }}>
                       Cancel
                     </button>
                   </div>
@@ -1796,54 +1889,50 @@ export const App: React.FC = () => {
 
       {/* Tab 6: Live Encrypted Chat */}
       {activeTab === 'chat' && (
-        <section className="card" style={{ display: 'flex', flexDirection: 'column', height: '600px' }}>
+        <section className="card card-cyber animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: '640px' }}>
           {/* Chat Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '18px', borderBottom: '1px solid var(--color-border)', marginBottom: '18px' }}>
             <div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
-                End-to-End Encrypted Chat with:
+              <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
+                End-to-End Encrypted Session with:
               </div>
-              <div style={{ fontFamily: 'monospace', fontSize: '1rem', color: '#F9FAFB', fontWeight: 600 }}>
+              <div style={{ fontFamily: 'monospace', fontSize: '1.05rem', color: '#F8FAFC', fontWeight: 700, marginTop: '2px' }}>
                 {activeChatContact ? activeChatContact.counterpartPublicId : 'No contact selected'}
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span className="badge" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
-                🔒 Double Ratchet XChaCha20-Poly1305
+              <span className="badge badge-live">
+                🔒 Double Ratchet Active
               </span>
             </div>
           </div>
 
           {!activeChatContact ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-secondary)' }}>
-              Select a contact from the "Contacts & Safety" tab to begin an encrypted conversation.
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', gap: '14px' }}>
+              <div style={{ fontSize: '3rem' }}>💬</div>
+              <p style={{ fontSize: '0.92rem' }}>Select an approved contact from the <strong>Contacts & Safety</strong> tab to begin an encrypted conversation.</p>
+              <button onClick={() => setActiveTab('contacts')} className="btn-primary">
+                View Contacts
+              </button>
             </div>
           ) : (
             <>
               {/* Message History Window */}
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px', background: '#090D14', borderRadius: '10px', border: '1px solid var(--color-border)', marginBottom: '16px' }}>
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px', background: 'rgba(6, 9, 14, 0.75)', borderRadius: '12px', border: '1px solid var(--color-border)', marginBottom: '16px' }}>
                 {chatMessages.length === 0 ? (
-                  <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
-                    No messages yet. Send a message to start the ratchet exchange.
+                  <div style={{ margin: 'auto', textAlign: 'center', color: '#64748B', fontSize: '0.88rem', maxWidth: '420px', lineHeight: 1.6 }}>
+                    <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🔐</div>
+                    No messages yet in this session. Send a message to initiate the Double Ratchet key exchange.
                     <br />
-                    <span style={{ fontSize: '0.75rem', color: '#10B981' }}>
-                      Server stores strictly ciphertext envelopes; zero plaintext is ever readable on the backend.
+                    <span style={{ fontSize: '0.78rem', color: '#10B981', fontWeight: 600, display: 'block', marginTop: '6px' }}>
+                      Server stores strictly ciphertext envelopes; zero plaintext is readable on backend.
                     </span>
                   </div>
                 ) : (
                   chatMessages.map((m) => (
                     <div
                       key={m.id}
-                      style={{
-                        alignSelf: m.sender === 'me' ? 'flex-end' : 'flex-start',
-                        maxWidth: '75%',
-                        backgroundColor: m.sender === 'me' ? '#064E3B' : '#1F2937',
-                        color: '#F9FAFB',
-                        padding: '10px 14px',
-                        borderRadius: '12px',
-                        border: '1px solid',
-                        borderColor: m.sender === 'me' ? '#059669' : '#374151',
-                      }}
+                      className={m.sender === 'me' ? 'chat-bubble-me' : 'chat-bubble-them'}
                     >
                       {m.attachment ? (
                         <div style={{ marginBottom: '6px' }}>
@@ -1851,19 +1940,19 @@ export const App: React.FC = () => {
                             style={{
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '10px',
-                              padding: '8px 12px',
+                              gap: '12px',
+                              padding: '10px 14px',
                               background: 'rgba(0,0,0,0.3)',
-                              borderRadius: '8px',
-                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '10px',
+                              border: '1px solid rgba(255,255,255,0.15)',
                             }}
                           >
-                            <span style={{ fontSize: '1.4rem' }}>📎</span>
+                            <span style={{ fontSize: '1.6rem' }}>📎</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div
                                 style={{
-                                  fontSize: '0.85rem',
-                                  fontWeight: 600,
+                                  fontSize: '0.88rem',
+                                  fontWeight: 700,
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
                                   whiteSpace: 'nowrap',
@@ -1871,7 +1960,7 @@ export const App: React.FC = () => {
                               >
                                 {m.attachment.metadata.filename}
                               </div>
-                              <div style={{ fontSize: '0.7rem', color: '#9CA3AF' }}>
+                              <div style={{ fontSize: '0.72rem', color: '#CBD5E1', marginTop: '2px' }}>
                                 {(m.attachment.metadata.byteSize / 1024).toFixed(1)} KB · {m.attachment.metadata.mimeType}
                               </div>
                             </div>
@@ -1880,11 +1969,11 @@ export const App: React.FC = () => {
                               onClick={() => handleDownloadAttachment(m.attachment!)}
                               style={{
                                 backgroundColor: '#10B981',
-                                color: '#090D14',
+                                color: '#06090E',
                                 border: 'none',
                                 borderRadius: '6px',
-                                padding: '6px 12px',
-                                fontSize: '0.75rem',
+                                padding: '6px 14px',
+                                fontSize: '0.76rem',
                                 fontWeight: 700,
                                 cursor: 'pointer',
                               }}
@@ -1894,10 +1983,10 @@ export const App: React.FC = () => {
                           </div>
                         </div>
                       ) : (
-                        <div style={{ fontSize: '0.92rem', lineHeight: 1.5 }}>{m.text}</div>
+                        <div style={{ fontSize: '0.94rem', lineHeight: 1.5 }}>{m.text}</div>
                       )}
-                      <div style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: '4px', textAlign: 'right' }}>
-                        {m.timestamp} · 🔒 E2EE
+                      <div style={{ fontSize: '0.72rem', color: m.sender === 'me' ? 'rgba(255,255,255,0.85)' : '#94A3B8', marginTop: '6px', textAlign: 'right' }}>
+                        {m.timestamp} · 🔒 E2EE ✓✓
                       </div>
                     </div>
                   ))
@@ -1918,11 +2007,11 @@ export const App: React.FC = () => {
                   disabled={isUploadingAttachment}
                   className="btn-secondary"
                   style={{
-                    padding: '12px 16px',
+                    padding: '12px 18px',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
-                    fontSize: '0.85rem',
+                    fontSize: '0.88rem',
                   }}
                   title="Attach encrypted file"
                 >
@@ -1936,10 +2025,10 @@ export const App: React.FC = () => {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSendMessage();
                   }}
-                  style={{ flex: 1, padding: '12px 16px', background: '#090D14', border: '1px solid var(--color-border)', borderRadius: '8px', color: '#F9FAFB', fontSize: '0.9rem' }}
+                  style={{ flex: 1, padding: '12px 16px' }}
                 />
-                <button onClick={handleSendMessage} className="btn-primary" style={{ padding: '0 24px' }}>
-                  Send
+                <button onClick={handleSendMessage} className="btn-primary" style={{ padding: '0 26px', height: '46px' }}>
+                  Send 🚀
                 </button>
               </div>
             </>
@@ -1949,75 +2038,50 @@ export const App: React.FC = () => {
 
       {/* Tab 7: Plans & Quotas (Phase 8) */}
       {activeTab === 'plans' && (
-        <section className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', color: '#F9FAFB' }}>Plans & Quotas</h2>
-              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
-                Active Plan:{' '}
-                <strong style={{ color: subscription?.tier === 'PRO' ? '#38BDF8' : '#10B981' }}>
-                  {subscription?.tier || 'FREE'}
-                </strong>{' '}
-                ({subscription?.status || 'free'})
-              </p>
-            </div>
-            {subscription?.tier === 'PRO' ? (
-              <button
-                onClick={handleCancelSubscription}
-                disabled={isProcessingBilling}
-                className="btn-secondary"
-                style={{ color: '#EF4444', borderColor: '#7F1D1D' }}
-              >
-                Cancel Subscription
-              </button>
-            ) : (
-              <button
-                onClick={handleUpgradeToPro}
-                disabled={isProcessingBilling || !identity}
-                className="btn-primary"
-              >
-                {isProcessingBilling ? 'Processing...' : '⚡ Upgrade to Pro (Sandbox Demo)'}
-              </button>
-            )}
-          </div>
-
-          {/* Security Invariant Alert */}
-          <div
-            style={{
-              backgroundColor: 'rgba(16, 185, 129, 0.08)',
-              padding: '16px',
-              borderRadius: '10px',
-              border: '1px solid #10B981',
-              marginBottom: '24px',
-            }}
-          >
-            <div style={{ fontSize: '0.85rem', color: '#10B981', fontWeight: 700, marginBottom: '4px' }}>
-              🔒 Security Invariant: Core E2EE is Never Paywalled
-            </div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-              Under NIZ architectural security invariants, End-to-End Encryption, Double Ratchet session security,
-              permanent QR identities, and contact approval are completely free for all users forever. Paid plans
-              only expand storage limits and concurrent linked device capacities.
+        <section className="card card-cyber animate-fade-in">
+          <div style={{ marginBottom: '24px' }}>
+            <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#F8FAFC' }}>
+              Privacy & Cloud Capacity Plans
+            </h2>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.86rem', marginTop: '4px' }}>
+              Core cryptographic privacy is non-negotiable and 100% free forever. Paid tiers scale storage quotas and device capacity.
             </p>
           </div>
 
-          {/* Tier Comparison Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
             {/* Free Plan */}
             <div
               style={{
-                background: '#090D14',
-                padding: '24px',
-                borderRadius: '12px',
-                border: subscription?.tier === 'FREE' ? '2px solid #10B981' : '1px solid var(--color-border)',
+                background: 'rgba(10, 15, 26, 0.85)',
+                padding: '28px',
+                borderRadius: '14px',
+                border: subscription?.tier === 'FREE' || !subscription ? '2px solid #10B981' : '1px solid var(--color-border)',
+                position: 'relative',
               }}
             >
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#F9FAFB' }}>Community Free</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10B981', margin: '8px 0' }}>
-                $0 <span style={{ fontSize: '0.8rem', color: '#9CA3AF' }}>/ forever</span>
+              {(subscription?.tier === 'FREE' || !subscription) && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '-10px',
+                    right: '20px',
+                    backgroundColor: '#10B981',
+                    color: '#06090E',
+                    fontSize: '0.72rem',
+                    fontWeight: 800,
+                    padding: '3px 10px',
+                    borderRadius: '999px',
+                  }}
+                >
+                  CURRENT ACTIVE PLAN
+                </span>
+              )}
+              <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#F8FAFC' }}>NIZ Standard</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#10B981', margin: '10px 0' }}>
+                $0 <span style={{ fontSize: '0.82rem', color: '#94A3B8', fontWeight: 500 }}>/ forever</span>
               </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: '16px 0', fontSize: '0.85rem', color: '#D1D5DB', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <li>✓ Full Double Ratchet E2EE Text</li>
+              <ul style={{ listStyle: 'none', padding: 0, margin: '20px 0', fontSize: '0.86rem', color: '#D1D5DB', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <li>✓ 100% Full Double Ratchet E2EE Text</li>
                 <li>✓ Permanent & Ephemeral QR Codes</li>
                 <li>✓ Up to 3 Linked Devices</li>
                 <li>✓ 25MB Encrypted File Attachments</li>
@@ -2028,31 +2092,56 @@ export const App: React.FC = () => {
             {/* Pro Plan */}
             <div
               style={{
-                background: '#090D14',
-                padding: '24px',
-                borderRadius: '12px',
-                border: subscription?.tier === 'PRO' ? '2px solid #38BDF8' : '1px solid var(--color-border)',
+                background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(10, 15, 26, 0.95) 100%)',
+                padding: '28px',
+                borderRadius: '14px',
+                border: subscription?.tier === 'PRO' ? '2px solid #38BDF8' : '1px solid rgba(56, 189, 248, 0.35)',
+                position: 'relative',
               }}
             >
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#F9FAFB' }}>NIZ Pro (Sandbox)</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#38BDF8', margin: '8px 0' }}>
-                $5 <span style={{ fontSize: '0.8rem', color: '#9CA3AF' }}>/ month</span>
+              <span
+                style={{
+                  position: 'absolute',
+                  top: '-10px',
+                  right: '20px',
+                  backgroundColor: '#38BDF8',
+                  color: '#06090E',
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                  padding: '3px 10px',
+                  borderRadius: '999px',
+                }}
+              >
+                POPULAR (SANDBOX)
+              </span>
+              <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#F8FAFC' }}>NIZ Pro</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#38BDF8', margin: '10px 0' }}>
+                $5 <span style={{ fontSize: '0.82rem', color: '#94A3B8', fontWeight: 500 }}>/ month</span>
               </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: '16px 0', fontSize: '0.85rem', color: '#D1D5DB', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <ul style={{ listStyle: 'none', padding: 0, margin: '20px 0', fontSize: '0.86rem', color: '#D1D5DB', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <li>✓ Everything in Free</li>
                 <li>✓ Up to 10 Linked Devices</li>
                 <li>✓ 100MB Encrypted Attachments</li>
                 <li>✓ 30-Day Queue & Blob Retention</li>
                 <li>✓ Priority Push WebSocket Service</li>
               </ul>
-              {subscription?.tier !== 'PRO' && (
+              {subscription?.tier !== 'PRO' ? (
                 <button
                   onClick={handleUpgradeToPro}
                   disabled={isProcessingBilling || !identity}
                   className="btn-primary"
-                  style={{ width: '100%', marginTop: '12px' }}
+                  style={{ width: '100%', marginTop: '14px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}
                 >
-                  {isProcessingBilling ? 'Processing...' : 'Upgrade to Pro'}
+                  {isProcessingBilling ? 'Processing...' : '⚡ Upgrade to Pro (Sandbox)'}
+                </button>
+              ) : (
+                <button
+                  onClick={handleCancelSubscription}
+                  disabled={isProcessingBilling}
+                  className="btn-secondary"
+                  style={{ width: '100%', marginTop: '14px', color: '#F87171' }}
+                >
+                  Cancel Pro Subscription
                 </button>
               )}
             </div>
@@ -2060,16 +2149,16 @@ export const App: React.FC = () => {
         </section>
       )}
 
-      {/* Footer */}
+      {/* Modern Footer */}
       <footer
         style={{
           marginTop: '60px',
           textAlign: 'center',
           color: 'var(--color-text-muted)',
-          fontSize: '0.8rem',
+          fontSize: '0.82rem',
         }}
       >
-        NIZ Chat Version 1.0 (Phase 4 MVP) · Double Ratchet End-to-End Encryption & Real-Time Delivery
+        NIZ Chat Version 1.0 · Double Ratchet End-to-End Encryption · Zero-Knowledge Architecture
       </footer>
     </div>
   );

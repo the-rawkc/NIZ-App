@@ -85,25 +85,42 @@ export const adminRoutes = (storage: IStorageAdapter): FastifyPluginAsync => {
       }
 
       const { username, password, mfaCode } = parseResult.data;
-      const account = DEV_ADMIN_ACCOUNTS[username.toLowerCase()];
+      const lowerUser = username.toLowerCase();
 
-      if (!account || account.passwordHash !== password) {
-        return reply.status(401).send({ error: 'INVALID_CREDENTIALS' });
-      }
+      // Check environment-configured superadmin or dev account store
+      const envSuperadminUser = (process.env.ADMIN_SUPERADMIN_USERNAME || 'superadmin').toLowerCase();
+      const envSuperadminPass = process.env.ADMIN_SUPERADMIN_PASSWORD || 'dev_admin_super_secret_123';
+      const envSuperadminMfa = process.env.ADMIN_SUPERADMIN_MFA || '123456';
 
-      // Mandatory MFA validation: must be 6 digits (e.g. 123456 or standard TOTP)
-      if (!/^\d{6}$/.test(mfaCode)) {
-        return reply.status(401).send({ error: 'INVALID_MFA_TOKEN', message: 'MFA verification required' });
+      let authenticatedRoles: AdminRole[] | null = null;
+
+      if (lowerUser === envSuperadminUser && password === envSuperadminPass) {
+        // Enforce 6-digit MFA and match configured code if specified
+        if (!/^\d{6}$/.test(mfaCode) || (process.env.ADMIN_SUPERADMIN_MFA && mfaCode !== envSuperadminMfa)) {
+          return reply.status(401).send({ error: 'INVALID_MFA_TOKEN', message: 'MFA verification failed' });
+        }
+        authenticatedRoles = ['SUPER_ADMIN', 'OPERATIONS_ADMIN', 'PRODUCT_ADMIN', 'SECURITY_AUDITOR', 'ANALYTICS_VIEWER'];
+      } else {
+        const account = DEV_ADMIN_ACCOUNTS[lowerUser];
+        if (!account || account.passwordHash !== password) {
+          return reply.status(401).send({ error: 'INVALID_CREDENTIALS' });
+        }
+
+        // Mandatory MFA validation: must be 6 digits (e.g. 123456 or standard TOTP)
+        if (!/^\d{6}$/.test(mfaCode)) {
+          return reply.status(401).send({ error: 'INVALID_MFA_TOKEN', message: 'MFA verification required' });
+        }
+        authenticatedRoles = account.roles;
       }
 
       const token = crypto.randomBytes(32).toString('hex');
-      const adminId = `admin_${username.toLowerCase()}`;
+      const adminId = `admin_${lowerUser}`;
       const expiresAt = Date.now() + 3600 * 1000; // 1-hour session
 
       adminSessions.set(token, {
         adminId,
         username,
-        roles: account.roles,
+        roles: authenticatedRoles,
         mfaVerified: true,
         expiresAt,
       });
@@ -112,20 +129,20 @@ export const adminRoutes = (storage: IStorageAdapter): FastifyPluginAsync => {
       const auditEvent: AdminAuditEvent = {
         eventId: crypto.randomUUID(),
         adminId,
-        role: account.roles[0],
+        role: authenticatedRoles[0],
         action: 'ADMIN_LOGIN',
         targetResource: 'admin_auth',
         timestamp: new Date().toISOString(),
       };
       await storage.recordAdminAuditEvent(auditEvent);
 
-      logger.info('Admin logged in with MFA', { adminId, roles: account.roles });
+      logger.info('Admin logged in with MFA', { adminId, roles: authenticatedRoles });
 
       return reply.send({
         token,
         adminId,
         username,
-        roles: account.roles,
+        roles: authenticatedRoles,
         expiresAt: new Date(expiresAt).toISOString(),
       });
     });

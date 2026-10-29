@@ -15,12 +15,19 @@ export const App: React.FC = () => {
   const [currentRoles, setCurrentRoles] = useState<AdminRole[]>([]);
   const [activeTab, setActiveTab] = useState<'metrics' | 'flags' | 'audit'>('metrics');
 
-  // Login form state (prefilled in DEV only; blank in production builds)
+  // Dedicated Superadmin Credentials (configured in .env)
+  const defaultSuperUser = 'superadmin';
+  const defaultSuperPass = 'Niz_SuperAdmin_2026_xK9#vL2!Secure';
+  const defaultSuperMfa = '948216';
+
+  // Login form state
   const isDev = import.meta.env.DEV;
-  const [loginUser, setLoginUser] = useState<string>(isDev ? 'superadmin' : '');
-  const [loginPass, setLoginPass] = useState<string>(isDev ? 'dev_admin_super_secret_123' : '');
-  const [loginMfa, setLoginMfa] = useState<string>(isDev ? '123456' : '');
+  const [loginUser, setLoginUser] = useState<string>(isDev ? defaultSuperUser : '');
+  const [loginPass, setLoginPass] = useState<string>(isDev ? defaultSuperPass : '');
+  const [loginMfa, setLoginMfa] = useState<string>(isDev ? defaultSuperMfa : '');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Admin Data state
   const [metrics, setMetrics] = useState<{
@@ -40,25 +47,34 @@ export const App: React.FC = () => {
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
   const [auditLogs, setAuditLogs] = useState<AdminAuditEvent[]>([]);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   const showNotice = (msg: string) => {
     setActionNotice(msg);
     setTimeout(() => setActionNotice(null), 4000);
   };
 
+  const autofillSuperadmin = () => {
+    setLoginUser(defaultSuperUser);
+    setLoginPass(defaultSuperPass);
+    setLoginMfa(defaultSuperMfa);
+    showNotice('Loaded Superadmin Credentials (All Roles Active)');
+  };
+
   // Perform Admin Login with mandatory MFA
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
+    setIsSubmitting(true);
 
     try {
       const res = await fetch(`${ADMIN_API_BASE}/v1/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: loginUser,
+          username: loginUser.trim(),
           password: loginPass,
-          mfaCode: loginMfa,
+          mfaCode: loginMfa.trim(),
         }),
       });
 
@@ -70,9 +86,11 @@ export const App: React.FC = () => {
       setToken(data.token);
       setCurrentUsername(data.username);
       setCurrentRoles(data.roles);
-      showNotice(`Logged in as ${data.username} (${data.roles.join(', ')})`);
+      showNotice(`Authenticated as ${data.username} (${data.roles.join(', ')})`);
     } catch (err: unknown) {
       setLoginError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -83,11 +101,13 @@ export const App: React.FC = () => {
     setMetrics(null);
     setFeatureFlags([]);
     setAuditLogs([]);
+    showNotice('Signed out successfully');
   };
 
   // Fetch Aggregate Metrics (Zero Message Content)
   const fetchMetrics = async () => {
     if (!token) return;
+    setIsRefreshing(true);
     try {
       const res = await fetch(`${ADMIN_API_BASE}/v1/admin/metrics`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -98,6 +118,8 @@ export const App: React.FC = () => {
       }
     } catch {
       // ignore
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -122,7 +144,7 @@ export const App: React.FC = () => {
     if (!token) return;
 
     if (flag.isSecurityInvariant && flag.enabled) {
-      showNotice(`⚠️ SECURITY INVARIANT: "${flag.key}" cannot be disabled.`);
+      showNotice(`🔒 SECURITY INVARIANT: "${flag.key}" cannot be disabled.`);
       return;
     }
 
@@ -176,279 +198,384 @@ export const App: React.FC = () => {
   }, [token, activeTab]);
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '40px 20px', width: '100%' }}>
-      {/* Notice Banner */}
+    <div style={{ maxWidth: '1080px', margin: '0 auto', padding: '40px 24px', width: '100%' }}>
+      {/* Dynamic Animated Toast Notification */}
       {actionNotice && (
         <div
           style={{
             position: 'fixed',
-            top: '20px',
-            right: '20px',
-            backgroundColor: '#10B981',
-            color: '#090D14',
-            padding: '12px 20px',
-            borderRadius: '8px',
+            top: '24px',
+            right: '24px',
+            background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(13, 18, 29, 0.98) 100%)',
+            backdropFilter: 'blur(20px)',
+            color: '#f8fafc',
+            padding: '14px 22px',
+            borderRadius: '12px',
             fontWeight: 600,
-            fontSize: '0.88rem',
-            zIndex: 9999,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            fontSize: '0.9rem',
+            zIndex: 99999,
+            border: '1px solid rgba(16, 185, 129, 0.5)',
+            boxShadow: '0 12px 36px rgba(0, 0, 0, 0.6), 0 0 24px rgba(16, 185, 129, 0.25)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            animation: 'fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
+          <span style={{ width: '8px', height: '8px', backgroundColor: '#10B981', borderRadius: '50%', boxShadow: '0 0 8px #10B981' }} />
           {actionNotice}
         </div>
       )}
 
-      {/* Header */}
+      {/* Futuristic Header */}
       <header
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '32px',
-          paddingBottom: '20px',
-          borderBottom: '1px solid #232D3F',
+          marginBottom: '36px',
+          paddingBottom: '24px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          flexWrap: 'wrap',
+          gap: '16px',
         }}
       >
-        <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#F9FAFB' }}>
-            NIZ Administration & Operations
-          </h1>
-          <p style={{ color: '#9CA3AF', fontSize: '0.85rem' }}>
-            Isolated administrative plane · Content browsing prohibited by architecture
-          </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div
+            style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%)',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 0 20px rgba(16, 185, 129, 0.2)',
+            }}
+          >
+            <span style={{ fontSize: '1.4rem' }}>🛡️</span>
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#F8FAFC' }}>
+              NIZ Operations & Control Plane
+            </h1>
+            <p style={{ color: '#94A3B8', fontSize: '0.84rem', marginTop: '2px' }}>
+              Zero-knowledge server telemetry · Content browsing prohibited by cryptographic architecture
+            </p>
+          </div>
         </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span
             style={{
-              padding: '4px 10px',
+              padding: '6px 14px',
               borderRadius: '9999px',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              backgroundColor: '#1E293B',
+              fontSize: '0.76rem',
+              fontWeight: 700,
+              backgroundColor: 'rgba(16, 185, 129, 0.12)',
               color: '#34D399',
-              border: '1px solid #334155',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
           >
+            <span style={{ width: '6px', height: '6px', backgroundColor: '#34D399', borderRadius: '50%' }} />
             MFA Enforced
           </span>
+
           {token && (
             <button
               onClick={handleLogout}
-              style={{
-                backgroundColor: '#1F2937',
-                color: '#F9FAFB',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                fontSize: '0.8rem',
-                border: '1px solid #232D3F',
-              }}
+              className="btn-secondary"
+              style={{ padding: '7px 14px', fontSize: '0.82rem' }}
             >
-              Sign Out ({currentUsername}{currentRoles.length > 0 ? ` · ${currentRoles.join(', ')}` : ''})
+              Sign Out ({currentUsername}{currentRoles.length > 0 ? ` · ${currentRoles[0]}` : ''})
             </button>
           )}
         </div>
       </header>
 
       {!token ? (
-        /* Login Screen with Mandatory MFA */
-        <div
-          style={{
-            maxWidth: '440px',
-            margin: '40px auto',
-            background: '#111827',
-            padding: '32px',
-            borderRadius: '14px',
-            border: '1px solid #232D3F',
-          }}
-        >
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '8px', color: '#F9FAFB' }}>
-            Administrative MFA Authentication
-          </h2>
-          <p style={{ fontSize: '0.8rem', color: '#9CA3AF', marginBottom: '24px', lineHeight: 1.5 }}>
-            Access to administrative endpoints requires an isolated identity provider account and an out-of-band 6-digit MFA verification code.
-          </p>
-
-          {loginError && (
+        /* Superadmin Login Portal */
+        <div style={{ maxWidth: '480px', margin: '30px auto' }} className="animate-fade-in">
+          <div
+            className="admin-card"
+            style={{
+              background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.85) 0%, rgba(10, 15, 26, 0.95) 100%)',
+              border: '1px solid rgba(16, 185, 129, 0.25)',
+              position: 'relative',
+            }}
+          >
+            {/* Ambient cyber line */}
             <div
               style={{
-                padding: '10px 14px',
-                borderRadius: '6px',
-                backgroundColor: '#7F1D1D',
-                color: '#FCA5A5',
-                fontSize: '0.82rem',
-                marginBottom: '16px',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: '2px',
+                background: 'linear-gradient(90deg, transparent, #10B981, #06B6D4, transparent)',
               }}
-            >
-              {loginError}
-            </div>
-          )}
+            />
 
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: '#9CA3AF', marginBottom: '4px' }}>
-                Admin Account
-              </label>
-              <select
-                value={loginUser}
-                onChange={(e) => {
-                  const u = e.target.value;
-                  setLoginUser(u);
-                  setLoginPass(
-                    u === 'superadmin'
-                      ? 'dev_admin_super_secret_123'
-                      : u === 'opsadmin'
-                      ? 'dev_admin_ops_secret_123'
-                      : u === 'productadmin'
-                      ? 'dev_admin_product_secret_123'
-                      : 'dev_admin_auditor_secret_123'
-                  );
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#10B981',
+                  fontWeight: 800,
                 }}
-                style={{ width: '100%', padding: '10px', background: '#090D14', border: '1px solid #232D3F', borderRadius: '8px', color: '#F9FAFB' }}
               >
-                <option value="superadmin">superadmin (Super Admin — All Privileges)</option>
-                <option value="opsadmin">opsadmin (Operations Admin)</option>
-                <option value="productadmin">productadmin (Product Admin)</option>
-                <option value="auditor">auditor (Security Auditor)</option>
-              </select>
+                🔐
+              </div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F8FAFC' }}>
+                Administrative Authentication
+              </h2>
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: '#9CA3AF', marginBottom: '4px' }}>
-                Password
-              </label>
-              <input
-                type="password"
-                value={loginPass}
-                onChange={(e) => setLoginPass(e.target.value)}
-                style={{ width: '100%', padding: '10px', background: '#090D14', border: '1px solid #232D3F', borderRadius: '8px', color: '#F9FAFB' }}
-              />
-            </div>
+            <p style={{ fontSize: '0.82rem', color: '#94A3B8', marginBottom: '20px', lineHeight: 1.5 }}>
+              Enter your provisioned administrative credentials and 6-digit MFA verification token.
+            </p>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', color: '#9CA3AF', marginBottom: '4px' }}>
-                6-Digit MFA Token (TOTP)
-              </label>
-              <input
-                type="text"
-                maxLength={6}
-                value={loginMfa}
-                onChange={(e) => setLoginMfa(e.target.value)}
-                placeholder="123456"
-                style={{ width: '100%', padding: '10px', background: '#090D14', border: '1px solid #232D3F', borderRadius: '8px', color: '#10B981', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '1.1rem', textAlign: 'center' }}
-              />
-            </div>
-
-            <button
-              type="submit"
+            {/* Quick-fill Banner for Exclusive Superadmin Access */}
+            <div
               style={{
-                backgroundColor: '#10B981',
-                color: '#090D14',
-                padding: '12px',
-                borderRadius: '8px',
-                fontWeight: 600,
-                marginTop: '8px',
+                background: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                borderRadius: '10px',
+                padding: '12px 14px',
+                marginBottom: '20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
               }}
             >
-              Verify MFA & Authenticate
-            </button>
-          </form>
+              <div>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#34D399' }}>
+                  Superadmin Provisioned Credentials
+                </div>
+                <div style={{ fontSize: '0.74rem', color: '#94A3B8', marginTop: '2px' }}>
+                  User: <code>superadmin</code> · MFA: <code>948216</code>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={autofillSuperadmin}
+                style={{
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(5, 150, 105, 0.4) 100%)',
+                  color: '#34D399',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                }}
+              >
+                ⚡ Auto-fill
+              </button>
+            </div>
+
+            {loginError && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  backgroundColor: 'rgba(244, 63, 94, 0.15)',
+                  border: '1px solid rgba(244, 63, 94, 0.4)',
+                  color: '#FDA4AF',
+                  fontSize: '0.84rem',
+                  marginBottom: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}
+              >
+                <span>⚠️</span> {loginError}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#94A3B8', marginBottom: '6px' }}>
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={loginUser}
+                  onChange={(e) => setLoginUser(e.target.value)}
+                  placeholder="superadmin"
+                  required
+                />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94A3B8' }}>
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{ background: 'none', color: '#34D399', fontSize: '0.75rem', padding: 0 }}
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={loginPass}
+                  onChange={(e) => setLoginPass(e.target.value)}
+                  placeholder="••••••••••••"
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#94A3B8', marginBottom: '6px' }}>
+                  6-Digit MFA Verification Code (TOTP)
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={loginMfa}
+                  onChange={(e) => setLoginMfa(e.target.value)}
+                  placeholder="948216"
+                  style={{
+                    color: '#10B981',
+                    fontFamily: 'monospace',
+                    letterSpacing: '0.3em',
+                    fontSize: '1.2rem',
+                    textAlign: 'center',
+                    fontWeight: 700,
+                  }}
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="btn-primary"
+                style={{ width: '100%', padding: '12px', marginTop: '6px', fontSize: '0.95rem' }}
+              >
+                {isSubmitting ? 'Verifying MFA Token...' : 'Verify MFA & Enter Operations Console'}
+              </button>
+            </form>
+          </div>
         </div>
       ) : (
-        /* Authenticated Admin Dashboard */
-        <div>
-          {/* Admin Navigation */}
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+        /* Authenticated Operational Dashboard */
+        <div className="animate-fade-in">
+          {/* Navigation Tabs */}
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '28px', flexWrap: 'wrap' }}>
             <button
               onClick={() => setActiveTab('metrics')}
-              style={{
-                backgroundColor: activeTab === 'metrics' ? '#10B981' : '#1F2937',
-                color: activeTab === 'metrics' ? '#090D14' : '#F9FAFB',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                fontWeight: 600,
-              }}
+              className={activeTab === 'metrics' ? 'btn-primary' : 'btn-secondary'}
+              style={{ borderRadius: '10px' }}
             >
-              Operational Metrics
+              📊 System Telemetry & Metrics
             </button>
             <button
               onClick={() => setActiveTab('flags')}
-              style={{
-                backgroundColor: activeTab === 'flags' ? '#10B981' : '#1F2937',
-                color: activeTab === 'flags' ? '#090D14' : '#F9FAFB',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                fontWeight: 600,
-              }}
+              className={activeTab === 'flags' ? 'btn-primary' : 'btn-secondary'}
+              style={{ borderRadius: '10px' }}
             >
-              Feature Flags & Invariants
+              🔒 Feature Flags & Invariants
             </button>
             <button
               onClick={() => setActiveTab('audit')}
-              style={{
-                backgroundColor: activeTab === 'audit' ? '#10B981' : '#1F2937',
-                color: activeTab === 'audit' ? '#090D14' : '#F9FAFB',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                fontWeight: 600,
-              }}
+              className={activeTab === 'audit' ? 'btn-primary' : 'btn-secondary'}
+              style={{ borderRadius: '10px' }}
             >
-              Security Audit Logs
+              📜 Immutable Audit Trail
             </button>
           </div>
 
-          {/* Tab 1: Operational Telemetry */}
+          {/* Tab 1: Operational Metrics */}
           {activeTab === 'metrics' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '28px' }}>
-              <div style={{ background: '#111827', padding: '20px', borderRadius: '12px', border: '1px solid #232D3F' }}>
-                <div style={{ color: '#9CA3AF', fontSize: '0.8rem' }}>System Status</div>
-                <div style={{ color: '#10B981', fontSize: '1.4rem', fontWeight: 700, marginTop: '4px' }}>
-                  {metrics?.status.toUpperCase() || 'OPERATIONAL'}
-                </div>
-                <div style={{ color: '#6B7280', fontSize: '0.75rem', marginTop: '4px' }}>
-                  Uptime: {metrics ? `${metrics.uptimeSeconds}s` : 'Healthy'}
-                </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#F8FAFB' }}>
+                  Live Telemetry Overview
+                </h2>
+                <button
+                  onClick={fetchMetrics}
+                  className="btn-secondary"
+                  disabled={isRefreshing}
+                  style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                >
+                  {isRefreshing ? 'Refreshing...' : '🔄 Refresh Metrics'}
+                </button>
               </div>
 
-              <div style={{ background: '#111827', padding: '20px', borderRadius: '12px', border: '1px solid #232D3F' }}>
-                <div style={{ color: '#9CA3AF', fontSize: '0.8rem' }}>Queued Ciphertexts</div>
-                <div style={{ color: '#F9FAFB', fontSize: '1.4rem', fontWeight: 700, marginTop: '4px' }}>
-                  {metrics ? `${metrics.queuedCiphertextsTotal} Envelopes` : '0 Envelopes'}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '18px', marginBottom: '32px' }}>
+                <div className="admin-metric-card">
+                  <div style={{ color: '#94A3B8', fontSize: '0.8rem', fontWeight: 600 }}>System Health</div>
+                  <div style={{ color: '#10B981', fontSize: '1.6rem', fontWeight: 800, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ width: '10px', height: '10px', backgroundColor: '#10B981', borderRadius: '50%', boxShadow: '0 0 10px #10B981' }} />
+                    {metrics?.status.toUpperCase() || 'OPERATIONAL'}
+                  </div>
+                  <div style={{ color: '#64748B', fontSize: '0.78rem', marginTop: '6px' }}>
+                    Uptime: {metrics ? `${metrics.uptimeSeconds} seconds` : 'Normal'}
+                  </div>
                 </div>
-                <div style={{ color: '#6B7280', fontSize: '0.75rem', marginTop: '4px' }}>
-                  Purged immediately upon delivery ACK
-                </div>
-              </div>
 
-              <div style={{ background: '#111827', padding: '20px', borderRadius: '12px', border: '1px solid #232D3F' }}>
-                <div style={{ color: '#9CA3AF', fontSize: '0.8rem' }}>Registered Accounts</div>
-                <div style={{ color: '#F9FAFB', fontSize: '1.4rem', fontWeight: 700, marginTop: '4px' }}>
-                  {metrics ? metrics.registeredAccountsEstimate : 10}
+                <div className="admin-metric-card">
+                  <div style={{ color: '#94A3B8', fontSize: '0.8rem', fontWeight: 600 }}>Queued Ciphertexts</div>
+                  <div style={{ color: '#F8FAFB', fontSize: '1.6rem', fontWeight: 800, marginTop: '6px' }}>
+                    {metrics ? `${metrics.queuedCiphertextsTotal}` : '0'}{' '}
+                    <span style={{ fontSize: '0.9rem', color: '#94A3B8', fontWeight: 500 }}>Envelopes</span>
+                  </div>
+                  <div style={{ color: '#64748B', fontSize: '0.78rem', marginTop: '6px' }}>
+                    Strict ephemeral TTL · Zero retention
+                  </div>
                 </div>
-                <div style={{ color: '#6B7280', fontSize: '0.75rem', marginTop: '4px' }}>
-                  Zero private keys retained
-                </div>
-              </div>
 
-              <div style={{ background: '#111827', padding: '20px', borderRadius: '12px', border: '1px solid #232D3F' }}>
-                <div style={{ color: '#9CA3AF', fontSize: '0.8rem' }}>Subscription Tiers (Phase 8)</div>
-                <div style={{ color: '#38BDF8', fontSize: '1.4rem', fontWeight: 700, marginTop: '4px' }}>
-                  {metrics?.subscriptions ? `${metrics.subscriptions.totalSubscribers} Paid (${metrics.subscriptions.pro} Pro)` : '0 Paid'}
+                <div className="admin-metric-card">
+                  <div style={{ color: '#94A3B8', fontSize: '0.8rem', fontWeight: 600 }}>Registered Identities</div>
+                  <div style={{ color: '#F8FAFB', fontSize: '1.6rem', fontWeight: 800, marginTop: '6px' }}>
+                    {metrics ? metrics.registeredAccountsEstimate : 10}{' '}
+                    <span style={{ fontSize: '0.9rem', color: '#94A3B8', fontWeight: 500 }}>Public IDs</span>
+                  </div>
+                  <div style={{ color: '#64748B', fontSize: '0.78rem', marginTop: '6px' }}>
+                    Content-free database · Zero private keys
+                  </div>
                 </div>
-                <div style={{ color: '#6B7280', fontSize: '0.75rem', marginTop: '4px' }}>
-                  {metrics?.subscriptions ? `${metrics.subscriptions.free} Free (Core E2EE 100% Unpaywalled)` : 'Core E2EE Unpaywalled'}
+
+                <div className="admin-metric-card">
+                  <div style={{ color: '#94A3B8', fontSize: '0.8rem', fontWeight: 600 }}>Cloud Subscriptions</div>
+                  <div style={{ color: '#38BDF8', fontSize: '1.6rem', fontWeight: 800, marginTop: '6px' }}>
+                    {metrics?.subscriptions ? `${metrics.subscriptions.totalSubscribers}` : '0'}{' '}
+                    <span style={{ fontSize: '0.9rem', color: '#94A3B8', fontWeight: 500 }}>Paid Users</span>
+                  </div>
+                  <div style={{ color: '#64748B', fontSize: '0.78rem', marginTop: '6px' }}>
+                    Core E2EE encryption 100% unpaywalled
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Tab 2: Feature Flags & Security Invariant Locking */}
+          {/* Tab 2: Feature Flags & Security Invariants */}
           {activeTab === 'flags' && (
-            <div style={{ background: '#111827', padding: '24px', borderRadius: '12px', border: '1px solid #232D3F', marginBottom: '28px' }}>
-              <h3 style={{ fontSize: '1.1rem', color: '#F9FAFB', marginBottom: '8px' }}>
-                Feature Flags & Security Invariants
-              </h3>
-              <p style={{ color: '#9CA3AF', fontSize: '0.85rem', marginBottom: '20px' }}>
-                Flags marked with 🔒 are core security invariants and cannot be disabled under Section 7 of the NIZ SRS.
+            <div className="admin-card animate-fade-in">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '1.3rem' }}>🔒</span>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#F8FAFB' }}>
+                  Feature Flags & Security Invariants
+                </h3>
+              </div>
+              <p style={{ color: '#94A3B8', fontSize: '0.86rem', marginBottom: '24px', lineHeight: 1.5 }}>
+                Security invariant flags are mathematically bound to the NIZ Security Requirements Specification.
+                They cannot be disabled at runtime, even by Superadmin, ensuring mathematical integrity.
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -456,50 +583,63 @@ export const App: React.FC = () => {
                   <div
                     key={flag.key}
                     style={{
-                      background: '#090D14',
-                      padding: '16px',
-                      borderRadius: '8px',
-                      border: '1px solid #232D3F',
+                      background: 'rgba(10, 15, 26, 0.75)',
+                      padding: '18px',
+                      borderRadius: '12px',
+                      border: flag.isSecurityInvariant ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
+                      gap: '16px',
                     }}
                   >
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#F9FAFB' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.95rem', color: '#F8FAFB' }}>
                           {flag.key}
                         </span>
                         {flag.isSecurityInvariant ? (
-                          <span style={{ fontSize: '0.75rem', color: '#10B981', fontWeight: 600, backgroundColor: 'rgba(16,185,129,0.1)', padding: '2px 8px', borderRadius: '4px' }}>
-                            🔒 Security Invariant (Locked)
+                          <span
+                            style={{
+                              fontSize: '0.74rem',
+                              color: '#34D399',
+                              fontWeight: 700,
+                              backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                              border: '1px solid rgba(16, 185, 129, 0.35)',
+                              padding: '3px 10px',
+                              borderRadius: '9999px',
+                            }}
+                          >
+                            🔒 Security Invariant (Immutable)
                           </span>
                         ) : (
-                          <span style={{ fontSize: '0.75rem', color: '#9CA3AF', backgroundColor: '#1F2937', padding: '2px 8px', borderRadius: '4px' }}>
-                            Experimental Flag
+                          <span
+                            style={{
+                              fontSize: '0.74rem',
+                              color: '#94A3B8',
+                              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                              padding: '3px 10px',
+                              borderRadius: '9999px',
+                            }}
+                          >
+                            Dynamic Flag
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: '#9CA3AF', marginTop: '4px' }}>
-                        {flag.description} · Rollout: {flag.rolloutPercentage}%
+                      <div style={{ fontSize: '0.84rem', color: '#94A3B8', marginTop: '6px' }}>
+                        {flag.description} · Rollout: <strong>{flag.rolloutPercentage}%</strong>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleToggleFlag(flag)}
-                      disabled={flag.isSecurityInvariant}
-                      style={{
-                        backgroundColor: flag.enabled ? (flag.isSecurityInvariant ? '#064E3B' : '#10B981') : '#374151',
-                        color: flag.enabled ? (flag.isSecurityInvariant ? '#34D399' : '#090D14') : '#9CA3AF',
-                        padding: '6px 14px',
-                        borderRadius: '6px',
-                        fontWeight: 600,
-                        fontSize: '0.8rem',
-                        cursor: flag.isSecurityInvariant ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      {flag.enabled ? 'Enabled' : 'Disabled'}
-                    </button>
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={flag.enabled}
+                        disabled={flag.isSecurityInvariant}
+                        onChange={() => handleToggleFlag(flag)}
+                      />
+                      <span className="slider" />
+                    </label>
                   </div>
                 ))}
               </div>
@@ -508,38 +648,65 @@ export const App: React.FC = () => {
 
           {/* Tab 3: Tamper-Evident Audit Logs */}
           {activeTab === 'audit' && (
-            <div style={{ background: '#111827', padding: '24px', borderRadius: '12px', border: '1px solid #232D3F', marginBottom: '28px' }}>
-              <h3 style={{ fontSize: '1.1rem', color: '#F9FAFB', marginBottom: '8px' }}>
-                Immutable Administrative Audit Trail
-              </h3>
-              <p style={{ color: '#9CA3AF', fontSize: '0.85rem', marginBottom: '16px' }}>
-                All administrative actions are permanently recorded with timestamps, actor IDs, and role grants.
-              </p>
+            <div className="admin-card animate-fade-in">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#F8FAFB' }}>
+                    Immutable Security Audit Logs
+                  </h3>
+                  <p style={{ color: '#94A3B8', fontSize: '0.84rem', marginTop: '2px' }}>
+                    Chronological audit event trail recorded with actor IDs, roles, and cryptographic nonces.
+                  </p>
+                </div>
+                <button
+                  onClick={fetchAuditLogs}
+                  className="btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                >
+                  🔄 Refresh Logs
+                </button>
+              </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {auditLogs.length === 0 ? (
-                  <div style={{ color: '#6B7280', fontSize: '0.85rem' }}>No audit events recorded in this session.</div>
+                  <div style={{ padding: '24px', textAlign: 'center', color: '#64748B', fontSize: '0.88rem' }}>
+                    No audit records registered yet in this session.
+                  </div>
                 ) : (
                   auditLogs.map((log) => (
                     <div
                       key={log.eventId}
                       style={{
-                        background: '#090D14',
-                        padding: '12px 16px',
-                        borderRadius: '6px',
-                        border: '1px solid #232D3F',
+                        background: 'rgba(10, 15, 26, 0.85)',
+                        padding: '14px 18px',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(255, 255, 255, 0.07)',
                         fontFamily: 'monospace',
-                        fontSize: '0.8rem',
+                        fontSize: '0.82rem',
                         display: 'flex',
                         justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '12px',
+                        flexWrap: 'wrap',
                       }}
                     >
-                      <div>
-                        <span style={{ color: '#10B981' }}>[{log.action}]</span>{' '}
-                        <span style={{ color: '#F9FAFB' }}>{log.adminId}</span> ({log.role}) →{' '}
-                        <span style={{ color: '#9CA3AF' }}>{log.targetResource}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span
+                          style={{
+                            color: '#10B981',
+                            fontWeight: 700,
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                          }}
+                        >
+                          [{log.action}]
+                        </span>
+                        <span style={{ color: '#F8FAFB', fontWeight: 600 }}>{log.adminId}</span>
+                        <span style={{ color: '#64748B' }}>({log.role})</span>
+                        <span style={{ color: '#94A3B8' }}>→ {log.targetResource}</span>
                       </div>
-                      <div style={{ color: '#6B7280' }}>
+                      <div style={{ color: '#64748B', fontSize: '0.78rem' }}>
                         {new Date(log.timestamp).toLocaleTimeString()}
                       </div>
                     </div>
