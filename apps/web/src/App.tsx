@@ -1084,7 +1084,7 @@ export const App: React.FC = () => {
     }
   }, [activeTab, identity]);
 
-  if (!inApp && !identity) {
+  if (!inApp) {
     return (
       <div className="landing-hero animate-fade-in">
         {notification && <div className="toast-notice">{notification}</div>}
@@ -1106,6 +1106,58 @@ export const App: React.FC = () => {
         <p className="hero-subtitle">
           Engineered for absolute secrecy. Cryptographic keys are generated client-side with zero KYC or phone numbers, and communication is secured by Signal Double Ratchet with post-quantum readiness.
         </p>
+
+        {/* Active Session in Memory Quick Action */}
+        {identity && (
+          <div
+            style={{
+              background: 'rgba(16, 185, 129, 0.1)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              borderRadius: '16px',
+              padding: '16px 22px',
+              maxWidth: '680px',
+              width: '100%',
+              marginBottom: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+              flexWrap: 'wrap',
+              boxShadow: '0 8px 24px rgba(16, 185, 129, 0.15)',
+              zIndex: 1,
+            }}
+          >
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#34D399', letterSpacing: '0.04em' }}>
+                ACTIVE IDENTITY IN MEMORY
+              </div>
+              <div style={{ fontFamily: 'monospace', fontSize: '0.84rem', color: '#F8FAFC', marginTop: '3px' }}>
+                {identity.publicId.slice(0, 24)}...
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setInApp(true)}
+                className="btn-primary"
+                style={{ padding: '8px 18px', fontSize: '0.86rem', fontWeight: 700 }}
+              >
+                ⚡ Resume Chat
+              </button>
+              <button
+                onClick={() => {
+                  setIdentity(null);
+                  setPermanentQrDataUrl('');
+                  showNotification('Local session keys locked and purged from memory.');
+                }}
+                className="btn-secondary"
+                style={{ padding: '8px 14px', fontSize: '0.82rem', color: '#F87171', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                title="Purge session from browser memory"
+              >
+                🔒 Lock
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Member Gateway Choice Grid */}
         <div className="onboarding-choices-grid">
@@ -1396,17 +1448,21 @@ export const App: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setInApp(false)}
+            onClick={() => {
+              setInApp(false);
+              showNotification('Returned to landing page.');
+            }}
             className="btn-secondary"
             style={{
               width: '100%',
-              padding: '8px 12px',
-              fontSize: '0.78rem',
+              padding: '9px 12px',
+              fontSize: '0.8rem',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: '6px',
-              color: '#94A3B8',
+              color: '#CBD5E1',
+              cursor: 'pointer',
             }}
             title="Return to Landing Page"
           >
